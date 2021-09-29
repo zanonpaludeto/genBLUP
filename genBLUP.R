@@ -411,7 +411,7 @@ genBLUP <- function(data, varResp, treatment = c("Prog","Clone"), plotType = c("
     }
   }
   
-  ######################################## Single-tree plot ##########################################
+  ##################### Single-tree plot
   
   if(plotType=="STP"){
     
