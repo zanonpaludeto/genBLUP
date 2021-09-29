@@ -5,7 +5,7 @@ genBLUP <- function(data, varResp, treatment = c("Prog","Clone"), plotType = c("
   
   # loading packages --------------------------------------------------------
   
-  pacman::p_load(future,sommer,stringr,tibble,tidyverse)
+  pacman::p_load(future,sommer,stringr,tidyverse)
   
   # stops and warnings ------------------------------------------------------
   
