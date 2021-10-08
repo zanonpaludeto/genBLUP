@@ -848,9 +848,7 @@ genBLUP <- function(data, varResp, treatment = c("Prog","Clone"), plotType = c("
     progBLUP <- mProg$U$Treat$resp %>% data.frame() %>% setNames("BLUP") %>% rownames_to_column(.,"Progeny") %>% 
       mutate(Progeny = str_replace_all(Progeny, 'Treat', ""), BLUP = BLUP*2) %>% arrange(desc(BLUP))
     
-    overBLUP <- progBLUP %>% mutate(Block = 0, Plot = 0, Tree = 0, Cod = "Parent") %>% relocate(Block,Progeny,Plot,Tree,BLUP,Cod)
-    
-    # Individual BLUP
+        # Individual BLUP
     indBLUP <- mAdd$U$`u:Ind`$resp %>% data.frame %>% setNames("BLUP") %>% rownames_to_column(.,"Ind")
     
     # Phenotypic and cod data
@@ -870,9 +868,11 @@ genBLUP <- function(data, varResp, treatment = c("Prog","Clone"), plotType = c("
     
     if(plotType=="LP"){ 
       dfblupInd <- separate(data=dfblup, col = Ind, into = c("Block","Progeny","Plot","Tree"), sep="\\.")
+      overBLUP <- progBLUP %>% mutate(Block = 0, Plot = 0, Tree = 0, Cod = "Parent") %>% relocate(Block,Progeny,Plot,Tree,BLUP,Cod)
     }
     if(plotType=="STP"){
-      dfblupInd <- separate(data=dfblup, col = Ind, into = c("Block","Progeny","Tree"), sep="\\.") 
+      dfblupInd <- separate(data=dfblup, col = Ind, into = c("Block","Progeny","Tree"), sep="\\.")
+      overBLUP <- progBLUP %>% mutate(Block = 0, Tree = 0, Cod = "Parent") %>% relocate(Block,Progeny,Tree,BLUP,Cod)
     }
     
     # Provenance BLUP
