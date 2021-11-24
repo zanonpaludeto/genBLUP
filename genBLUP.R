@@ -126,6 +126,10 @@ genBLUP <- function(data, varResp, treatment = c("Prog","Clone"), plotType = c("
     
     A <- makeA_op(data[,c("Ind","Prog")])
     data <- data[match(rownames(A),data$Ind),]
+    
+    resp <- data[,which(names(data)==varResp)]
+    data$resp <- resp
+    
     if(identical(data$Ind,rownames(A))==FALSE){
       stop("ERROR: Pedigree and data orders doesn't match, something strange happened")
       
