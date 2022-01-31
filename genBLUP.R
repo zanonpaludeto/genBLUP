@@ -1188,7 +1188,7 @@ genBLUP <- function(data, varResp, treatment = c("Prog","Clone"), plotType = c("
     
     # BLUP_Individual
     
-    # Criando Cod caso n?o exista
+    # Criando Cod caso nao existaa
     if(!("Cod" %in% colnames(data))){
       data$Cod = " "
     }
