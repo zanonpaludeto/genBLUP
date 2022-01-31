@@ -1195,7 +1195,7 @@ genBLUP <- function(data, varResp, treatment = c("Prog","Clone"), plotType = c("
     
     # Clone BLUP
     cloneBLUP <- mProg$U$Treat$resp %>% data.frame() %>% setNames("BLUP") %>% rownames_to_column(.,"Clone") %>% 
-      mutate(Progeny = str_replace_all(Progeny, 'Treat', "")) %>% arrange(desc(BLUP))
+      mutate(Clone = str_replace_all(Clone, 'Treat', "")) %>% arrange(desc(BLUP))
     
     # Provenance BLUP
     if(any(random=="Proc")){
