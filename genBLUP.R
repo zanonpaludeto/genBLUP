@@ -992,7 +992,7 @@ genBLUP <- function(data, varResp, treatment = c("Prog","Clone"), plotType = c("
       dfNe <- matrix(nrow=nrow(rankBLUP), ncol=1)
       
       for(i in 1:nrow(rankBLUP)){
-        varkf <- as.vector(table(rankBLUP$Prog?nie[1:i]))
+        varkf <- as.vector(table(rankBLUP$Progeny[1:i]))
         dfNe[i,] <- var(varkf)
       }
       rankBLUP$Np <- cumsum(!duplicated(rankBLUP$Progeny))
