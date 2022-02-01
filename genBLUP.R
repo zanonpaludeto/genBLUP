@@ -1044,7 +1044,7 @@ genBLUP <- function(data, varResp, treatment = c("Prog","Clone"), plotType = c("
     
     # accuracyPEV
     
-    dfaccClone <- setNames(data.frame(sqrt(1-(diag(mProg$PevU$`Treat`$resp)/mProg$sigmaVector[1]))),"Accuracy") %>% 
+    dfacc <- setNames(data.frame(sqrt(1-(diag(mProg$PevU$`Treat`$resp)/mProg$sigmaVector[1]))),"Accuracy") %>% 
       rownames_to_column(.,var="Clone") %>% mutate(Clone = str_replace_all(Clone, 'Treat', ""))
     accClone <- mean(dfacc$Accuracy, na.rm=T)
     
@@ -1220,8 +1220,7 @@ genBLUP <- function(data, varResp, treatment = c("Prog","Clone"), plotType = c("
     genParBLUP$genPar <- genPar
     
     # Clone accuracy
-    genParBLUP$accuracyPEV$clonePEV <- dfaccClone
-    
+    genParBLUP$accuracyPEV$clonePEV <- dfacc
     # BLUP
     genParBLUP$BLUP$cloneBLUP <- cloneBLUP
     
