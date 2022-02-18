@@ -197,7 +197,7 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
         #rcov=~units,
         #data=df %>% mutate(idNum = as.factor(idNum)), verbose = F)
         # }
-        mSig <- lme4::lmer(resp ~ Fixed1 + (1|Treat) + (1|Parc), control = control)
+        mSig <- lme4::lmer(resp ~ Fixed1 + (1|Treat) + (1|Parc), data=df, control = control)
       }
       if(length(fixed)==1&length(random)==1){
         
