@@ -66,7 +66,7 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
     procMeans <- groupMeans(data,"Proc")
   }
   
-  # factorizing variables and treeCheck -------------------------------------
+  # factorizing_variables_and_treeCheck -------------------------------------
   
   if(plotType=="LP"){
     if(length(random)>=1){
