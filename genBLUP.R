@@ -1,11 +1,10 @@
-genBLUP <- function(data, varResp, treatment = c("Prog","Clone"), plotType = c("LP","STP"), dominance = TRUE, 
-                    fixed = c("Rep","Proc"), random = c("Rep","Proc","Control"), 
+genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = NULL, method = "ai", 
                     genPar_digits, otimizeSelection = FALSE, maxIndProgeny = NULL, 
                     maxProgenyBlock = NULL, excludeControl = NULL, excludeCod = NULL, directory = NULL){
   
   # loading packages --------------------------------------------------------
   
-  pacman::p_load(future,sommer,stringr,tidyverse,ggroups)
+  pacman::p_load(future,sommer,stringr,tidyverse,ggroups,dplyr)
   
   # stops and warnings ------------------------------------------------------
   
@@ -22,10 +21,20 @@ genBLUP <- function(data, varResp, treatment = c("Prog","Clone"), plotType = c("
   }
   
   if(is.null(directory)){
-    warning("Directory is 'NULL', so no outputs were created")
+    warning("Directory is 'NULL', so no txt outputs were created")
+  }
+  if(treatment=="Clone"&otimizeSelection==T){
+    stop("ERROR: You can't otimize selection in a clonal analysis")
+  }  
+  if(method=="ai"||is.null(method)){
+    cat("AI-REML algorithm was selected\n")
+  }else{
+    cat("EM-REML algorith was selected\n")
   }
   
   # exploratory analysis ----------------------------------------------------
+  
+  data <- data[order(data[,which(colnames(data)==treatment)]),]
   
   resp <- data[,which(names(data)==varResp)]
   data$resp <- resp
@@ -103,906 +112,874 @@ genBLUP <- function(data, varResp, treatment = c("Prog","Clone"), plotType = c("
   
   # pedigree matrix ---------------------------------------------------------
   
+  # preparing data
+  
+  # Creating Cod if it doesn't exist
+  if(!("Cod" %in% colnames(data))){
+    data$Cod = " "
+  }
+  
+  #creating Ind column
   if(plotType=="LP"){  
     data$Ind <- paste0(data$Rep,sep = ".",data[,names(data) %in% treatment],sep=".",data$Parc,sep=".",data$Arv)
+  }else{data$Ind <- paste0(data$Rep,sep = ".",data[,names(data) %in% treatment],sep=".",data$Arv)  
   }
-  if(plotType=="STP"){
-    data$Ind <- paste0(data$Rep,sep = ".",data[,names(data) %in% treatment],sep=".",data$Arv)  
-  }
+  
+  data <- data %>% mutate(idNum=1)
   
   if(treatment=="Prog"){
     
-    makeA_op <- function(data){
+    #counting nProg (dams)
+    nProg <- data.frame(Prog = sort(unique(data$Prog)), nProg = as.numeric(seq(1,length(unique(data$Prog)))))
+    nInd <- seq(dim(nProg)[1]+1,dim(data)[1]+(dim(nProg)[1]))
+    data <- data %>% mutate(idNum=as.numeric(nInd))
+    data <- dplyr::left_join(data,nProg,by="Prog")
+    
+    breedR.createPed <- function(pedData){
       
-      ped <- data.frame(data,sire=0) %>% setNames(c("Ind","dam","sire")) %>% relocate(dam, .after = sire) %>% arrange(dam)
+      ped <- data.frame(pedData,sire=0) %>% setNames(c("idNum","dam","sire")) %>% relocate(dam, .after = sire)
+      
       if(any(duplicated(ped[,1])==TRUE)){
         stop("ERROR: There is duplicated individuals, please check your data")
       }
-      exc <- length(levels(factor(ped$dam)))
-      A <- data.frame(levels(factor(ped$dam)),0,0) %>% setNames(c("Ind","dam","sire")) %>% rbind(.,ped) %>% 
-        ggroups::buildA(.) %>% .[-1:-exc,-1:-exc]
-      return(A)
+      ped <- data.frame(as.numeric(levels(factor(ped$dam))),0,0) %>% setNames(c("idNum","sire","dam")) %>% rbind(.,ped)
+      return(ped)
     }
     
-    A <- makeA_op(data[,c("Ind","Prog")])
-    data <- data[match(rownames(A),data$Ind),]
-    
-    resp <- data[,which(names(data)==varResp)]
-    data$resp <- resp
-    
-    if(identical(data$Ind,rownames(A))==FALSE){
-      stop("ERROR: Pedigree and data orders doesn't match, something strange happened")
-      
-    }
+    ped <- breedR.createPed(data[,c("idNum","nProg")])
     
     # dominance matrix --------------------------------------------------------
     
-    if(dominance==TRUE){
-      
-      D_matrix <- data.frame(data[,c("Ind","Prog")],sire=0) %>% setNames(c("Ind","dam","sire")) %>% relocate(dam, .after = sire) %>% 
-        arrange(dam) %>% ggroups::buildD(.,A)
-      if(any(duplicated(rownames(D_matrix))==TRUE)){
-        stop("ERROR: There is duplicated individuals, please check your data")
-      }
-      D_matrix <- D_matrix[!is.na(data$resp),!is.na(data$resp)]
-    }
-    
-    A <- A[!is.na(data$resp),!is.na(data$resp)]
-    
+    # if(dominance==TRUE){
+    #   
+    #   A <- buildA(ped)
+    #   D <- ggroups::buildD(ped,A)
+    #   if(any(duplicated(rownames(D))==TRUE)){
+    #     stop("ERROR: There is duplicated individuals, please check your data")
+    #   }}
   }
   
-  # statistical modeling ----------------------------------------------------
   
+  # statistical modelling ---------------------------------------------------
   
-  future::plan(multisession)
+  # linear_plot -------------------------------------------------------------
   
-  if(plotType=="LP"){
+  #suppressing messages and warnings
+  control=lmerControl(check.conv.singular = .makeCC(action = "ignore",  tol = 1e-4))
+  defaultW <- getOption("warn") 
+  options(warn = -1)
+  convergence = F
+  
+  while(!convergence){
     
-    if(length(fixed)==1&length(random)==0){
+    suppressMessages(if(plotType=="LP"){
       
-      df <- setNames(data.frame(data$Ind,data[,names(data) %in% treatment],data$Parc,data$resp,data[,names(data) %in% fixed],data[,names(data) %in% random],
-                                stringsAsFactors = F),c("Ind","Treat","Parc","resp","Fixed1"))
-      
-      Progmodel %<-% sommer::mmer(resp ~ Fixed1,
-                                  random= ~ Treat + Parc,
-                                  rcov=~units,
-                                  data=df)
-      if(treatment=="Prog"){
-        Amodel %<-% sommer::mmer(resp ~ Fixed1,
-                                 random= ~ vs(Ind,Gu=A) + Parc,
-                                 rcov=~units,
-                                 data=df)
-        if(dominance==TRUE){
-          Dmodel %<-% sommer::mmer(resp ~ Fixed1,
-                                   random= ~ vs(Ind,Gu=D_matrix) + Parc,
-                                   rcov=~units,
-                                   data=df)
-        }}
-      mSig <- lme4::lmer(resp ~ Fixed1 + (1|Treat) + (1|Parc), data=df)
-      mSig1 <- lme4::lmer(resp ~ Fixed1 + (1|Parc), data=df)
-      mSig2 <- lme4::lmer(resp ~ Fixed1 + (1|Treat), data=df)
-    }
-    
-    if(length(fixed)==1&length(random)==1){
-      
-      df <- setNames(data.frame(data$Ind,data[,names(data) %in% treatment],data$Parc,data$resp,data[,names(data) %in% fixed],data[,names(data) %in% random],
-                                stringsAsFactors = F), c("Ind","Treat","Parc","resp","Fixed1","Random1"))
-      
-      Progmodel %<-% sommer::mmer(resp ~ Fixed1,
-                                  random= ~ Treat + Parc + Random1,
-                                  rcov=~units,
-                                  data=df)
-      if(treatment=="Prog"){
-        Amodel %<-% sommer::mmer(resp ~ Fixed1,
-                                 random= ~ vs(Ind,Gu=A) + Parc + Random1,
-                                 rcov=~units,
-                                 data=df)
-        if(dominance==TRUE){
-          Dmodel %<-% sommer::mmer(resp ~ Fixed1,
-                                   random= ~ vs(Ind,Gu=D_matrix) + Parc + Random1,
-                                   rcov=~units,
-                                   data=df)
-        }}
-      mSig <- lme4::lmer(resp ~ Fixed1 + (1|Treat) + (1|Parc) + (1|Random1), data=df)
-      mSig1 <- lme4::lmer(resp ~ Fixed1 + (1|Parc) + (1|Random1), data=df)
-      mSig2 <- lme4::lmer(resp ~ Fixed1 + (1|Treat) + (1|Random1), data=df)
-      mSig3 <- lme4::lmer(resp ~ Fixed1 + (1|Treat) + (1|Parc), data=df)
-    }
-    
-    if(length(fixed)==1&length(random)==2){
-      
-      df <- setNames(data.frame(data$Ind,data[,names(data) %in% treatment],data$Parc,data$resp,data[,names(data) %in% fixed],data[,names(data) %in% random],
-                                stringsAsFactors = F), c("Ind","Treat","Parc","resp","Fixed1","Random1","Random2"))
-      
-      if(any(random=="Proc")){
-        if(df$Random2==data$Proc){
-          df$Random2 <- df$Random1
-          df$Random1 <- data$Proc
+      if(length(fixed)==1&length(random)==0){
+        
+        df <- data %>% dplyr::select("Ind","idNum",treatment,"Parc","resp",fixed) %>% rename("Fixed1"=fixed,"Treat"=3)
+        
+        if(treatment=="Prog"){
+          mAdd <- breedR::remlf90(fixed = resp ~ Fixed1,
+                                  random = ~ Parc,
+                                  genetic = list(model = "add_animal",
+                                                 pedigree = ped,id = "idNum"),
+                                  data = df,method = method,
+                                  progsf90.options = 'EM-REML 10')
+        }else{
+          mClone <- breedR::remlf90(fixed = resp ~ Fixed1,
+                                    random = ~ Treat + Parc,
+                                    data = df,method = method,
+                                    progsf90.options = 'EM-REML 10')
         }
+        #if(dominance==TRUE){
+        #mDom <- sommer::mmer(resp ~ Fixed1,
+        #random= ~ vs(idNum,Gu=D) + Parc,
+        #rcov=~units,
+        #data=df %>% mutate(idNum = as.factor(idNum)), verbose = F)
+        # }
+        mSig <- lme4::lmer(resp ~ Fixed1 + (1|Treat) + (1|Parc), control = control)
       }
-      
-      Progmodel %<-% sommer::mmer(resp ~ Fixed1,
-                                  random= ~ Treat + Parc + Random1 + Random2,
-                                  rcov=~units,
-                                  data=df)
-      if(treatment=="Prog"){
-        Amodel %<-% sommer::mmer(resp ~ Fixed1,
-                                 random= ~ vs(Ind,Gu=A) + Parc + Random1 + Random2,
-                                 rcov=~units,
-                                 data=df)
-        if(dominance==TRUE){
-          Dmodel %<-% sommer::mmer(resp ~ Fixed1,
-                                   random= ~ vs(Ind,Gu=D_matrix) + Parc + Random1 + Random2,
-                                   rcov=~units,
-                                   data=df)
+      if(length(fixed)==1&length(random)==1){
+        
+        df <- data %>% dplyr::select("Ind","idNum",treatment,"Parc","resp",fixed,random) %>% rename("Fixed1"=fixed,"Treat"=3,"Random1"=random)
+        
+        if(treatment=="Prog"){
+          mAdd <- breedR::remlf90(fixed = resp ~ Fixed1,
+                                  random = ~ Parc + Random1,
+                                  genetic = list(model = "add_animal",
+                                                 pedigree = ped,id = "idNum"),
+                                  data = df,method = method,
+                                  progsf90.options = 'EM-REML 10')
           
-        }}
-      mSig <- lme4::lmer(resp ~ Fixed1 + (1|Treat) + (1|Parc) + (1|Random1) + (1|Random2), data=df)
-      mSig1 <- lme4::lmer(resp ~ Fixed1 + (1|Parc) + (1|Random1) + (1|Random2), data=df)
-      mSig2 <- lme4::lmer(resp ~ Fixed1 + (1|Treat) + (1|Random1) + (1|Random2), data=df)
-      mSig3 <- lme4::lmer(resp ~ Fixed1 + (1|Treat) + (1|Parc)+ (1|Random2), data=df)
-      mSig4 <- lme4::lmer(resp ~ Fixed1 + (1|Treat) + (1|Parc) + (1|Random1), data=df)
-    }
-    
-    if(length(fixed)==2&length(random)==0){
-      
-      df <- setNames(data.frame(data$Ind,data[,names(data) %in% treatment],data$Parc,data$resp,data[,names(data) %in% fixed],data[,names(data) %in% random],
-                                stringsAsFactors = F), c("Ind","Treat","Parc","resp","Fixed1","Fixed2"))
-      
-      Progmodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2,
-                                  random= ~ Treat + Parc,
-                                  rcov=~units,
-                                  data=df)
-      if(treatment=="Prog"){
-        Amodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2,
-                                 random= ~ vs(Ind,Gu=A) + Parc,
-                                 rcov=~units,
-                                 data=df)
-        if(dominance==TRUE){
-          Dmodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2,
-                                   random= ~ vs(Ind,Gu=D_matrix) + Parc,
-                                   rcov=~units,
-                                   data=df)
-        }}
-      mSig <- lme4::lmer(resp ~ Fixed1 + Fixed2 + (1|Treat) + (1|Parc), data=df)
-      mSig1 <- lme4::lmer(resp ~ Fixed1 + Fixed2 + (1|Parc), data=df)
-      mSig2 <- lme4::lmer(resp ~ Fixed1 + Fixed2 + (1|Treat), data=df)
-    }
-    
-    if(length(fixed)==2&length(random)==1){
-      
-      df <- setNames(data.frame(data$Ind,data[,names(data) %in% treatment],data$Parc,data$resp,data[,names(data) %in% fixed],data[,names(data) %in% random],
-                                stringsAsFactors = F), c("Ind","Treat","Parc","resp","Fixed1","Fixed2","Random1"))
-      
-      Progmodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2,
-                                  random= ~ Treat + Parc + Random1,
-                                  rcov=~units,
-                                  data=df)
-      if(treatment=="Prog"){
-        Amodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2,
-                                 random= ~ vs(Ind,Gu=A) + Parc + Random1,
-                                 rcov=~units,
-                                 data=df)
-        if(dominance==TRUE){
-          Dmodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2,
-                                   random= ~ vs(Ind,Gu=D_matrix) + Parc + Random1,
-                                   rcov=~units,
-                                   data=df)
-        }}
-      mSig <- lme4::lmer(resp ~ Fixed1 + Fixed2 + (1|Treat) + (1|Parc) + (1|Random1), data=df)
-      mSig1 <- lme4::lmer(resp ~ Fixed1 + Fixed2 + (1|Parc) + (1|Random1), data=df)
-      mSig2 <- lme4::lmer(resp ~ Fixed1 + Fixed2 + (1|Treat) + (1|Random1), data=df)
-      mSig3 <- lme4::lmer(resp ~ Fixed1 + Fixed2 + (1|Treat) + (1|Parc), data=df)
-    }
-    
-    if(length(fixed)==2&length(random)==2){
-      
-      df <- setNames(data.frame(data$Ind,data[,names(data) %in% treatment],data$Parc,data$resp,data[,names(data) %in% fixed],data[,names(data) %in% random],
-                                stringsAsFactors = F), c("Ind","Treat","Parc","resp","Fixed1","Fixed2","Random1","Random2"))
-      
-      if(any(random=="Proc")){
-        if(df$Random2==data$Proc){
-          df$Random2 <- df$Random1
-          df$Random1 <- data$Proc
+        }else{
+          mClone <- breedR::remlf90(fixed = resp ~ Fixed1,
+                                    random = ~ Treat + Parc + Random1,
+                                    data = df,method = method,
+                                    progsf90.options = 'EM-REML 10')
         }
+        # if(dominance==TRUE){
+        #   mDom <- sommer::mmer(resp ~ Fixed1,
+        #                          random= ~ vs(idNum,Gu=D) + Parc + Random1,
+        #                          rcov=~units,
+        #                          data=df %>% mutate(idNum = as.factor(idNum)), verbose = F)
+        # }
+        mSig <- lme4::lmer(resp ~ Fixed1 + (1|Treat) + (1|Parc) + (1|Random1), data=df, control = control)
       }
       
-      Progmodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2,
-                                  random= ~ Treat + Parc + Random1 + Random2,
-                                  rcov=~units,
-                                  data=df)
-      if(treatment=="Prog"){
-        Amodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2,
-                                 random= ~ vs(Ind,Gu=A) + Parc + Random1 + Random2,
-                                 rcov=~units,
-                                 data=df)
-        if(dominance==TRUE){
-          Dmodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2,
-                                   random= ~ vs(Ind,Gu=D_matrix) + Parc + Random1 + Random2,
-                                   rcov=~units,
-                                   data=df)
-        }}
-      mSig <- lme4::lmer(resp ~ Fixed1 + Fixed2 + (1|Treat) + (1|Parc) + (1|Random1) + (1|Random2), data=df)
-      mSig1 <- lme4::lmer(resp ~ Fixed1 + Fixed2 + (1|Parc) + (1|Random1) + (1|Random2), data=df)
-      mSig2 <- lme4::lmer(resp ~ Fixed1 + Fixed2 + (1|Treat) + (1|Random1) + (1|Random2), data=df)
-      mSig3 <- lme4::lmer(resp ~ Fixed1 + Fixed2 + (1|Treat) + (1|Parc) + (1|Random2), data=df)
-      mSig4 <- lme4::lmer(resp ~ Fixed1 + Fixed2 + (1|Treat) + (1|Parc) + (1|Random1), data=df)
-    }
-    
-    if(length(fixed)==3&length(random)==0){
-      
-      df <- setNames(data.frame(data$Ind,data[,names(data) %in% treatment],data$Parc,data$resp,data[,names(data) %in% fixed],data[,names(data) %in% random],
-                                stringsAsFactors = F), c("Ind","Treat","Parc","resp","Fixed1","Fixed2","Fixed3"))
-      
-      Progmodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2 + Fixed3,
-                                  random= ~ Treat + Parc,
-                                  rcov=~units,
-                                  data=df)
-      if(treatment=="Prog"){
-        Amodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2 + Fixed3,
-                                 random= ~ vs(Ind,Gu=A) + Parc,
-                                 rcov=~units,
-                                 data=df)
-        if(dominance==TRUE){
-          Dmodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2 + Fixed3,
-                                   random= ~ vs(Ind,Gu=D_matrix) + Parc,
-                                   rcov=~units,
-                                   data=df)
-        }}
-      mSig <- lme4::lmer(resp ~ Fixed1 + Fixed2 + Fixed3 + (1|Treat) + (1|Parc), data=df)
-      mSig1 <- lme4::lmer(resp ~ Fixed1 + Fixed2 + Fixed3 + (1|Parc), data=df)
-      mSig2 <- lme4::lmer(resp ~ Fixed1 + Fixed2 + Fixed3 + (1|Treat), data=df)
-    }
-    
-    if(length(fixed)==3&length(random)==1){
-      
-      df <- setNames(data.frame(data$Ind,data[,names(data) %in% treatment],data$Parc,data$resp,data[,names(data) %in% fixed],data[,names(data) %in% random],
-                                stringsAsFactors = F), c("Ind","Treat","Parc","resp","Fixed1","Fixed2","Fixed3","Random1"))
-      
-      Progmodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2 + Fixed3,
-                                  random= ~ Treat + Parc + Random1,
-                                  rcov=~units,
-                                  data=df)
-      if(treatment=="Prog"){
-        Amodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2 + Fixed3,
-                                 random= ~ vs(Ind,Gu=A) + Parc + Random1,
-                                 rcov=~units,
-                                 data=df)
-        if(dominance==TRUE){
-          Dmodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2 + Fixed3,
-                                   random= ~ vs(Ind,Gu=D_matrix) + Parc + Random1,
-                                   rcov=~units,
-                                   data=df)
-        }}
-      mSig <- lme4::lmer(resp ~ Fixed1 + Fixed2 + Fixed3 + (1|Treat) + (1|Parc) + (1|Random1), data=df)
-      mSig1 <- lme4::lmer(resp ~ Fixed1 + Fixed2 + Fixed3 + (1|Parc) + (1|Random1), data=df)
-      mSig2 <- lme4::lmer(resp ~ Fixed1 + Fixed2 + Fixed3 + (1|Treat) + (1|Random1), data=df)
-      mSig3 <- lme4::lmer(resp ~ Fixed1 + Fixed2 + Fixed3 + (1|Treat) + (1|Parc), data=df)
-    }
-    
-    if(length(fixed)==3&length(random)==2){
-      
-      df <- setNames(data.frame(data$Ind,data[,names(data) %in% treatment],data$Parc,data$resp,data[,names(data) %in% fixed],data[,names(data) %in% random],
-                                stringsAsFactors = F), c("Ind","Treat","Parc","resp","Fixed1","Fixed2","Fixed3","Random1","Random2"))
-      
-      if(any(random=="Proc")){
-        if(df$Random2==data$Proc){
-          df$Random2 <- df$Random1
-          df$Random1 <- data$Proc
-        }
-      }
-      
-      Progmodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2 + Fixed3,
-                                  random= ~ Treat + Parc + Random1 + Random2,
-                                  rcov=~units,
-                                  data=df)
-      if(treatment=="Prog"){
-        Amodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2 + Fixed3,
-                                 random= ~ vs(Ind,Gu=A) + Parc + Random1 + Random2,
-                                 rcov=~units,
-                                 data=df)
-        if(dominance==TRUE){
-          Dmodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2 + Fixed3,
-                                   random= ~ vs(Ind,Gu=D_matrix) + Parc + Random1 + Random2,
-                                   rcov=~units,
-                                   data=df)
-        }}
-      mSig <- lme4::lmer(resp ~ Fixed1 + Fixed2 + Fixed3 + (1|Treat) + (1|Parc) + (1|Random1) + (1|Random2), data=df)
-      mSig1 <- lme4::lmer(resp ~ Fixed1 + Fixed2 + Fixed3 + (1|Parc) + (1|Random1) + (1|Random2), data=df)
-      mSig2 <- lme4::lmer(resp ~ Fixed1 + Fixed2 + Fixed3 + (1|Treat) + (1|Random1) + (1|Random2), data=df)
-      mSig3 <- lme4::lmer(resp ~ Fixed1 + Fixed2 + Fixed3 + (1|Treat) + (1|Parc) + (1|Random2), data=df)
-      mSig4 <- lme4::lmer(resp ~ Fixed1 + Fixed2 + Fixed3 + (1|Treat) + (1|Parc) + (1|Random1), data=df)
-    }
-  }
-  
-  ###################### Single-tree plot
-  
-  if(plotType=="STP"){
-    
-    if(length(fixed)==1&length(random)==0){
-      
-      df <- setNames(data.frame(data$Ind,data[,names(data) %in% treatment],data$resp,data[,names(data) %in% fixed],
-                                stringsAsFactors = F), c("Ind","Treat","resp","Fixed1"))
-      
-      Progmodel %<-% sommer::mmer(resp ~ Fixed1,
-                                  random= ~ Treat,
-                                  rcov=~units,
-                                  data=df)
-      if(treatment=="Prog"){
-        Amodel %<-% sommer::mmer(resp ~ Fixed1,
-                                 random= ~ vs(Ind,Gu=A),
-                                 rcov=~units,
-                                 data=df)
+      if(length(fixed)==1&length(random)==2){
         
-        if(dominance==TRUE){
-          Dmodel %<-% sommer::mmer(resp ~ Fixed1,
-                                   random= ~ vs(Ind,Gu=D_matrix),
-                                   rcov=~units,
-                                   data=df)
-        }}
-      mSig <- lme4::lmer(resp ~ Fixed1 + (1|Treat), data=df)
-      mSig1 <- lm(resp ~ Fixed1, data=df)
-    }
-    
-    if(length(fixed)==1&length(random)==1){
-      
-      df <- setNames(data.frame(data$Ind,data[,names(data) %in% treatment],data$resp,data[,names(data) %in% fixed],data[,names(data) %in% random],
-                                stringsAsFactors = F), c("Ind","Treat","resp","Fixed1","Random1"))
-      
-      Progmodel %<-% sommer::mmer(resp ~ Fixed1,
-                                  random= ~ Treat + Random1,
-                                  rcov=~units,
-                                  data=df)
-      if(treatment=="Prog"){
-        Amodel %<-% sommer::mmer(resp ~ Fixed1,
-                                 random= ~ vs(Ind,Gu=A) + Random1,
-                                 rcov=~units,
-                                 data=df)
-        if(dominance==TRUE){
-          Dmodel %<-% sommer::mmer(resp ~ Fixed1,
-                                   random= ~ vs(Ind,Gu=D_matrix) + Random1,
-                                   rcov=~units,
-                                   data=df)
-        }}
-      mSig <- lme4::lmer(resp ~ Fixed1 + (1|Treat) + (1|Random1), data=df)
-      mSig1 <- lme4::lmer(resp ~ Fixed1 + (1|Random1), data=df)
-      mSig2 <- lme4::lmer(resp ~ Fixed1 + (1|Treat), data=df)
-    }
-    
-    if(length(fixed)==1&length(random)==2){
-      
-      df <- setNames(data.frame(data$Ind,data[,names(data) %in% treatment],data$resp,data[,names(data) %in% fixed],data[,names(data) %in% random],
-                                stringsAsFactors = F), c("Ind","Treat","resp","Fixed1","Random1","Random2"))
-      
-      if(any(random=="Proc")){
-        if(df$Random2==data$Proc){
-          df$Random2 <- df$Random1
-          df$Random1 <- data$Proc
+        df <- data %>% dplyr::select("Ind","idNum",treatment,"Parc","resp",fixed,random) %>% rename("Fixed1"=fixed,"Treat"=3,"Random"=random)
+        
+        if(any(random=="Proc")){
+          if(df$Random2==data$Proc){
+            df$Random2 <- df$Random1
+            df$Random1 <- data$Proc
+          }
         }
-      }
-      
-      Progmodel %<-% sommer::mmer(resp ~ Fixed1,
-                                  random= ~ Treat + Random1 + Random2,
-                                  rcov=~units,
-                                  data=df)
-      if(treatment=="Prog"){
-        Amodel %<-% sommer::mmer(resp ~ Fixed1,
-                                 random= ~ vs(Ind,Gu=A) + Random1 + Random2,
-                                 rcov=~units,
-                                 data=df)
-        if(dominance==TRUE){
-          Dmodel %<-% sommer::mmer(resp ~ Fixed1,
-                                   random= ~ vs(Ind,Gu=D_matrix) + Random1 + Random2,
-                                   rcov=~units,
-                                   data=df)
+        
+        if(treatment=="Prog"){
+          mAdd <- breedR::remlf90(fixed = resp ~ Fixed1,
+                                  random = ~ Parc + Random1 + Random2,
+                                  genetic = list(model = "add_animal",
+                                                 pedigree = ped,id = "idNum"),
+                                  data = df,method = method,
+                                  progsf90.options = 'EM-REML 10')
           
-        }}
-      mSig <- lme4::lmer(resp ~ Fixed1 + (1|Treat) + (1|Random1) + (1|Random2), data=df)
-      mSig1 <- lme4::lmer(resp ~ Fixed1 + (1|Random1) + (1|Random2), data=df)
-      mSig2 <- lme4::lmer(resp ~ Fixed1 + (1|Treat) + (1|Random2), data=df)
-      mSig3 <- lme4::lmer(resp ~ Fixed1 + (1|Treat) + (1|Random1), data=df)
-    }
-    
-    if(length(fixed)==2&length(random)==0){
-      
-      df <- setNames(data.frame(data$Ind,data[,names(data) %in% treatment],data$resp,data[,names(data) %in% fixed],
-                                stringsAsFactors = F), c("Ind","Treat","resp","Fixed1","Fixed2"))
-      
-      Progmodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2,
-                                  random= ~ Treat,
-                                  rcov=~units,
-                                  data=df)
-      if(treatment=="Prog"){
-        Amodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2,
-                                 random= ~ vs(Ind,Gu=A),
-                                 rcov=~units,
-                                 data=df)
-        
-        if(dominance==TRUE){
-          Dmodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2,
-                                   random= ~ vs(Ind,Gu=D_matrix),
-                                   rcov=~units,
-                                   data=df)
-        }}
-      mSig <- lme4::lmer(resp ~ Fixed1 + Fixed2 + (1|Treat), data=df)
-      mSig1 <- lm(resp ~ Fixed1 + Fixed2, data=df)
-    }
-    
-    if(length(fixed)==2&length(random)==1){
-      
-      df <- setNames(data.frame(data$Ind,data[,names(data) %in% treatment],data$resp,data[,names(data) %in% fixed],data[,names(data) %in% random],
-                                stringsAsFactors = F), c("Ind","Treat","resp","Fixed1","Fixed2","Random1"))
-      
-      Progmodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2,
-                                  random= ~ Treat + Random1,
-                                  rcov=~units,
-                                  data=df)
-      if(treatment=="Prog"){
-        Amodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2,
-                                 random= ~ vs(Ind,Gu=A) + Random1,
-                                 rcov=~units,
-                                 data=df)
-        
-        if(dominance==TRUE){
-          Dmodel %<-% sommer::mmer(resp ~ Fixed1, Fixed2,
-                                   random= ~ vs(Ind,Gu=D_matrix) + Random1,
-                                   rcov=~units,
-                                   data=df)
-        }}
-      mSig <- lme4::lmer(resp ~ Fixed1 + Fixed2 + (1|Treat) + (1|Random1), data=df)
-      mSig1 <- lme4::lmer(resp ~ Fixed1 + Fixed2 + (1|Random1), data=df)
-      mSig2 <- lme4::lmer(resp ~ Fixed1 + Fixed2 + (1|Treat), data=df)
-    }
-    
-    if(length(fixed)==2&length(random)==2){
-      
-      df <- setNames(data.frame(data$Ind,data[,names(data) %in% treatment],data$resp,data[,names(data) %in% fixed],data[,names(data) %in% random],
-                                stringsAsFactors = F), c("Ind","Treat","resp","Fixed1","Fixed2","Random1","Random2"))
-      
-      if(any(random=="Proc")){
-        if(df$Random2==data$Proc){
-          df$Random2 <- df$Random1
-          df$Random1 <- data$Proc
+        }else{
+          mClone <- breedR::remlf90(fixed = resp ~ Fixed1,
+                                    random = ~ Treat + Parc + Random1 + Random2,
+                                    data = df,method = method,
+                                    progsf90.options = 'EM-REML 10')
         }
+        # if(dominance==TRUE){
+        #   mDom <- sommer::mmer(resp ~ Fixed1,
+        #                          random= ~ vs(idNum,Gu=D) + Parc + Random1 + Random2,
+        #                          rcov=~units,
+        #                          data=df %>% mutate(idNum = as.factor(idNum)), verbose = F)
+        #   
+        # }
+        mSig <- lme4::lmer(resp ~ Fixed1 + (1|Treat) + (1|Parc) + (1|Random1) + (1|Random2), data=df, control = control)
       }
       
-      Progmodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2,
-                                  random= ~ Treat + Random1 + Random2,
-                                  rcov=~units,
-                                  data=df)
-      if(treatment=="Prog"){
-        Amodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2,
-                                 random= ~ vs(Ind,Gu=A) + Random1 + Random2,
-                                 rcov=~units,
-                                 data=df)
-        if(dominance==TRUE){
-          Dmodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2,
-                                   random= ~ vs(Ind,Gu=D_matrix) + Random1 + Random2,
-                                   rcov=~units,
-                                   data=df)
-        }}
-      mSig <- lme4::lmer(resp ~ Fixed1 + Fixed2 + (1|Treat) + (1|Random1) + (1|Random2), data=df)
-      mSig1 <- lme4::lmer(resp ~ Fixed1 + Fixed2 + (1|Random1) + (1|Random2), data=df)
-      mSig2 <- lme4::lmer(resp ~ Fixed1 + Fixed2 + (1|Treat) + (1|Random2), data=df)
-      mSig3 <- lme4::lmer(resp ~ Fixed1 + Fixed2 + (1|Treat) + (1|Random1), data=df)
-    }
-    
-    if(length(fixed)==3&length(random)==0){
-      
-      df <- setNames(data.frame(data$Ind,data[,names(data) %in% treatment],data$resp,data[,names(data) %in% fixed],data[,names(data) %in% random],
-                                stringsAsFactors = F), c("Ind","Treat","resp","Fixed1","Fixed2","Fixed3"))
-      
-      Progmodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2 + Fixed3,
-                                  random= ~ Treat,
-                                  rcov=~units,
-                                  data=df)
-      if(treatment=="Prog"){
-        Amodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2 + Fixed3,
-                                 random= ~ vs(Ind,Gu=A),
-                                 rcov=~units,
-                                 data=df)
-        if(dominance==TRUE){
-          Dmodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2 + Fixed3,
-                                   random= ~ vs(Ind,Gu=D_matrix),
-                                   rcov=~units,
-                                   data=df)
-        }}
-      mSig <- lme4::lmer(resp ~ Fixed1 + Fixed2 + Fixed3 + (1|Treat), data=df)
-      mSig1 <- lm(resp ~ Fixed1 + Fixed2, data=df)
-    }
-    
-    if(length(fixed)==3&length(random)==1){
-      
-      df <- setNames(data.frame(data$Ind,data[,names(data) %in% treatment],data$resp,data[,names(data) %in% fixed],data[,names(data) %in% random],
-                                stringsAsFactors = F), c("Ind","Treat","resp","Fixed1","Fixed2","Fixed3","Random1"))
-      
-      Progmodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2 + Fixed3,
-                                  random= ~ Treat + Random1,
-                                  rcov=~units,
-                                  data=df)
-      if(treatment=="Prog"){
-        Amodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2 + Fixed3,
-                                 random= ~ vs(Ind,Gu=A) + Random1,
-                                 rcov=~units,
-                                 data=df)
-        if(dominance==TRUE){
-          Dmodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2 + Fixed3,
-                                   random= ~ vs(Ind,Gu=D_matrix) + Random1,
-                                   rcov=~units,
-                                   data=df)
-        }}
-      mSig <- lme4::lmer(resp ~ Fixed1 + Fixed2 + Fixed3 + (1|Treat) + (1|Random1), data=df)
-      mSig1 <- lme4::lmer(resp ~ Fixed1 + Fixed2 + Fixed3 + (1|Random1), data=df)
-      mSig2 <- lme4::lmer(resp ~ Fixed1 + Fixed2 + Fixed3 + (1|Treat), data=df)
-    }
-    
-    if(length(fixed)==3&length(random)==2){
-      
-      df <- setNames(data.frame(data$Ind,data[,names(data) %in% treatment],data$resp,data[,names(data) %in% fixed],data[,names(data) %in% random],
-                                stringsAsFactors = F), c("Ind","Treat","resp","Fixed1","Fixed2","Fixed3","Random1","Random2"))
-      
-      if(any(random=="Proc")){
-        if(df$Random2==data$Proc){
-          df$Random2 <- df$Random1
-          df$Random1 <- data$Proc
+      if(length(fixed)==2&length(random)==0){
+        
+        df <- data %>% dplyr::select("Ind","idNum",treatment,"Parc","resp",fixed) %>% rename("Fixed"=fixed,"Treat"=3)
+        
+        if(treatment=="Prog"){
+          mAdd <- breedR::remlf90(fixed = resp ~ Fixed1 + Fixed2,
+                                  random = ~ Parc,
+                                  genetic = list(model = "add_animal",
+                                                 pedigree = ped,id = "idNum"),
+                                  data = df,method = method,
+                                  progsf90.options = 'EM-REML 10')
+          
+        }else{
+          mClone <- breedR::remlf90(fixed = resp ~ Fixed1 + Fixed2,
+                                    random = ~ Treat + Parc,
+                                    data = df,method = method,
+                                    progsf90.options = 'EM-REML 10')
         }
+        # if(dominance==TRUE){
+        #   mDom <- sommer::mmer(resp ~ Fixed1 + Fixed2,
+        #                          random= ~ vs(idNum,Gu=D) + Parc,
+        #                          rcov=~units,
+        #                          data=df %>% mutate(idNum = as.factor(idNum)), verbose = F)
+        # }
+        mSig <- lme4::lmer(resp ~ Fixed1 + Fixed2 + (1|Treat) + (1|Parc), data=df, control = control)
       }
       
-      Progmodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2 + Fixed3,
-                                  random= ~ Treat + Random1 + Random2,
-                                  rcov=~units,
-                                  data=df)
-      if(treatment=="Prog"){
-        Amodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2 + Fixed3,
-                                 random= ~ vs(Ind,Gu=A) + Random1 + Random2,
-                                 rcov=~units,
-                                 data=df)
-        if(dominance==TRUE){
-          Dmodel %<-% sommer::mmer(resp ~ Fixed1 + Fixed2 + Fixed3,
-                                   random= ~ vs(Ind,Gu=D_matrix) + Random1 + Random2,
-                                   rcov=~units,
-                                   data=df)
-        }}
-      mSig <- lme4::lmer(resp ~ Fixed1 + Fixed2 + Fixed3 + (1|Treat) + (1|Random1) + (1|Random2), data=df)
-      mSig1 <- lme4::lmer(resp ~ Fixed1 + Fixed2 + Fixed3 + (1|Random1) + (1|Random2), data=df)
-      mSig2 <- lme4::lmer(resp ~ Fixed1 + Fixed2 + Fixed3 + (1|Treat) + (1|Random2), data=df)
-      mSig3 <- lme4::lmer(resp ~ Fixed1 + Fixed2 + Fixed3 + (1|Treat) + (1|Random1), data=df)
-    }
-  }
+      if(length(fixed)==2&length(random)==1){
+        
+        df <- data %>% dplyr::select("Ind","idNum",treatment,"Parc","resp",fixed,random) %>% rename("Fixed"=fixed,"Treat"=3,"Random1"=random)
+        
+        if(treatment=="Prog"){
+          mAdd <- breedR::remlf90(fixed = resp ~ Fixed1 + Fixed2,
+                                  random = ~ Parc + Random1,
+                                  genetic = list(model = "add_animal",
+                                                 pedigree = ped,id = "idNum"),
+                                  data = df,method = method,
+                                  progsf90.options = 'EM-REML 10')
+          
+        }else{
+          mClone <- breedR::remlf90(fixed = resp ~ Fixed1 + Fixed2,
+                                    random = ~ Treat + Parc + Random1,
+                                    data = df,method = method,
+                                    progsf90.options = 'EM-REML 10')
+        }
+        # if(dominance==TRUE){
+        #   mDom <- sommer::mmer(resp ~ Fixed1 + Fixed2,
+        #                          random= ~ vs(idNum,Gu=D) + Parc + Random1,
+        #                          rcov=~units,
+        #                          data=df %>% mutate(idNum = as.factor(idNum)), verbose = F)
+        # }
+        mSig <- lme4::lmer(resp ~ Fixed1 + Fixed2 + (1|Treat) + (1|Parc) + (1|Random1), data=df, control = control)
+      }
+      
+      if(length(fixed)==2&length(random)==2){
+        
+        df <- data %>% dplyr::select("Ind","idNum",treatment,"Parc","resp",fixed,random) %>% rename("Fixed"=fixed,"Treat"=3,"Random"=random)
+        
+        if(any(random=="Proc")){
+          if(df$Random2==data$Proc){
+            df$Random2 <- df$Random1
+            df$Random1 <- data$Proc
+          }
+        }
+        
+        if(treatment=="Prog"){
+          mAdd <- breedR::remlf90(fixed = resp ~ Fixed1 + Fixed2,
+                                  random = ~ Parc + Random1 + Random2,
+                                  genetic = list(model = "add_animal",
+                                                 pedigree = ped,id = "idNum"),
+                                  data = df,method = method,
+                                  progsf90.options = 'EM-REML 10')
+          
+        }else{
+          mClone <- breedR::remlf90(fixed = resp ~ Fixed1 + Fixed2,
+                                    random = ~ Treat + Parc + Random1 + Random2,
+                                    data = df,method = method,
+                                    progsf90.options = 'EM-REML 10')
+        }
+        # if(dominance==TRUE){
+        #   mDom <- sommer::mmer(resp ~ Fixed1 + Fixed2,
+        #                          random= ~ vs(idNum,Gu=D) + Parc + Random1 + Random2,
+        #                          rcov=~units,
+        #                          data=df %>% mutate(idNum = as.factor(idNum)), verbose = F)
+        # }
+        mSig <- lme4::lmer(resp ~ Fixed1 + Fixed2 + (1|Treat) + (1|Parc) + (1|Random1) + (1|Random2), data=df, control = control)
+      }
+      
+      if(length(fixed)==3&length(random)==0){
+        
+        df <- data %>% dplyr::select("Ind","idNum",treatment,"Parc","resp",fixed) %>% rename("Fixed"=fixed,"Treat"=3)
+        
+        if(treatment=="Prog"){
+          mAdd <- breedR::remlf90(fixed = resp ~ Fixed1 + Fixed2 + Fixed3,
+                                  random = ~ Parc,
+                                  genetic = list(model = "add_animal",
+                                                 pedigree = ped,id = "idNum"),
+                                  data = df,method = method,
+                                  progsf90.options = 'EM-REML 10')
+          
+        }else{
+          mClone <- breedR::remlf90(fixed = resp ~ Fixed1 + Fixed2 + Fixed3,
+                                    random = ~ Treat + Parc,
+                                    data = df,method = method,
+                                    progsf90.options = 'EM-REML 10')
+        }
+        # if(dominance==TRUE){
+        #   mDom <- sommer::mmer(resp ~ Fixed1 + Fixed2 + Fixed3,
+        #                          random= ~ vs(idNum,Gu=D) + Parc,
+        #                          rcov=~units,
+        #                          data=df %>% mutate(idNum = as.factor(idNum)), verbose = F)
+        # }
+        mSig <- lme4::lmer(resp ~ Fixed1 + Fixed2 + Fixed3 + (1|Treat) + (1|Parc), data=df, control = control)
+      }
+      
+      if(length(fixed)==3&length(random)==1){
+        
+        df <- data %>% dplyr::select("Ind","idNum",treatment,"Parc","resp",fixed,random) %>% rename("Fixed"=fixed,"Treat"=3,"Random1"=random)
+        
+        if(treatment=="Prog"){
+          mAdd <- breedR::remlf90(fixed = resp ~ Fixed1 + Fixed2 + Fixed3,
+                                  random = ~ Parc + Random1,
+                                  genetic = list(model = "add_animal",
+                                                 pedigree = ped,id = "idNum"),
+                                  data = df,method = method,
+                                  progsf90.options = 'EM-REML 10')
+          
+        }else{
+          mClone <- breedR::remlf90(fixed = resp ~ Fixed1 + Fixed2 + Fixed3,
+                                    random = ~ Treat + Parc + Random1,
+                                    data = df,method = method,
+                                    progsf90.options = 'EM-REML 10')
+        }
+        # if(dominance==TRUE){
+        #   mDom <- sommer::mmer(resp ~ Fixed1 + Fixed2 + Fixed3,
+        #                          random= ~ vs(idNum,Gu=D) + Parc + Random1,
+        #                          rcov=~units,
+        #                          data=df %>% mutate(idNum = as.factor(idNum)), verbose = F)
+        # }
+        mSig <- lme4::lmer(resp ~ Fixed1 + Fixed2 + Fixed3 + (1|Treat) + (1|Parc) + (1|Random1), data=df, control = control)
+      }
+      
+      if(length(fixed)==3&length(random)==2){
+        
+        df <- data %>% dplyr::select("Ind","idNum",treatment,"Parc","resp",fixed,random) %>% rename("Fixed"=fixed,"Treat"=3,"Random"=random)
+        
+        if(any(random=="Proc")){
+          if(df$Random2==data$Proc){
+            df$Random2 <- df$Random1
+            df$Random1 <- data$Proc
+          }
+        }
+        
+        if(treatment=="Prog"){
+          mAdd <- breedR::remlf90(fixed = resp ~ Fixed1 + Fixed2 + Fixed3,
+                                  random = ~ Parc + Random1 + Random2,
+                                  genetic = list(model = "add_animal",
+                                                 pedigree = ped,id = "idNum"),
+                                  data = df,method = method,
+                                  progsf90.options = 'EM-REML 10')
+          
+        }else{
+          mClone <- breedR::remlf90(fixed = resp ~ Fixed1 + Fixed2 + Fixed3,
+                                    random = ~ Treat + Parc + Random1 + Random2,
+                                    data = df,method = method,
+                                    progsf90.options = 'EM-REML 10')
+        }
+        # if(dominance==TRUE){
+        #   mDom <- sommer::mmer(resp ~ Fixed1 + Fixed2 + Fixed3,
+        #                          random= ~ vs(idNum,Gu=D) + Parc + Random1 + Random2,
+        #                          rcov=~units,
+        #                          data=df %>% mutate(idNum = as.factor(idNum)), verbose = F)
+        # }
+        mSig <- lme4::lmer(resp ~ Fixed1 + Fixed2 + Fixed3 + (1|Treat) + (1|Parc) + (1|Random1) + (1|Random2), data=df, control = control)
+      }
+    })
+    
+    # single_tree_plot --------------------------------------------------------
+    
+    suppressMessages(if(plotType=="STP"){
+      
+      if(length(fixed)==1&length(random)==0){
+        
+        df <- data %>% dplyr::select("Ind","idNum",treatment,"resp",fixed) %>% rename("Fixed1"=fixed,"Treat"=3)
+        
+        if(treatment=="Prog"){
+          mAdd <- breedR::remlf90(fixed = resp ~ Fixed1,
+                                  random = ~ 1,
+                                  genetic = list(model = "add_animal",
+                                                 pedigree = ped,id = "idNum"),
+                                  data = df,method = method,
+                                  progsf90.options = 'EM-REML 10')
+          
+        }else{
+          mClone <- breedR::remlf90(fixed = resp ~ Fixed1,
+                                    random = ~ Treat,
+                                    data = df,method = method,
+                                    progsf90.options = 'EM-REML 10')
+        }
+        # if(dominance==TRUE){
+        #   mDom <- sommer::mmer(resp ~ Fixed1,
+        #                          random= ~ vs(idNum,Gu=D),
+        #                          rcov=~units,
+        #                          data=df %>% mutate(idNum = as.factor(idNum)), verbose = F)
+        # }
+        mSig <- lme4::lmer(resp ~ Fixed1 + (1|Treat), data=df, control = control)
+      }
+      
+      if(length(fixed)==1&length(random)==1){
+        
+        df <- data %>% dplyr::select("Ind","idNum",treatment,"resp",fixed,random) %>% rename("Fixed1"=fixed,"Treat"=3,"Random1"=random)
+        
+        if(treatment=="Prog"){
+          mAdd <- breedR::remlf90(fixed = resp ~ Fixed1,
+                                  random = ~ Random1,
+                                  genetic = list(model = "add_animal",
+                                                 pedigree = ped,id = "idNum"),
+                                  data = df,method = method,
+                                  progsf90.options = 'EM-REML 10')
+          
+        }else{
+          mClone <- breedR::remlf90(fixed = resp ~ Fixed1,
+                                    random = ~ Treat + Random1,
+                                    data = df,method = method,
+                                    progsf90.options = 'EM-REML 10')
+        }
+        # if(dominance==TRUE){
+        #   mDom <- sommer::mmer(resp ~ Fixed1,
+        #                          random= ~ vs(idNum,Gu=D) + Random1,
+        #                          rcov=~units,
+        #                          data=df %>% mutate(idNum = as.factor(idNum)), verbose = F)
+        # }
+        mSig <- lme4::lmer(resp ~ Fixed1 + (1|Treat) + (1|Random1), data=df, control = control)
+      }
+      
+      if(length(fixed)==1&length(random)==2){
+        
+        df <- data %>% dplyr::select("Ind","idNum",treatment,"resp",fixed,random) %>% rename("Fixed1"=fixed,"Treat"=3,"Random"=random)
+        
+        if(any(random=="Proc")){
+          if(df$Random2==data$Proc){
+            df$Random2 <- df$Random1
+            df$Random1 <- data$Proc
+          }
+        }
+        
+        if(treatment=="Prog"){
+          mAdd <- breedR::remlf90(fixed = resp ~ Fixed1,
+                                  random = ~ Random1 + Random2,
+                                  genetic = list(model = "add_animal",
+                                                 pedigree = ped,id = "idNum"),
+                                  data = df,method = method,
+                                  progsf90.options = 'EM-REML 10')
+          
+        }else{
+          mClone <- breedR::remlf90(fixed = resp ~ Fixed1,
+                                    random = ~ Treat + Random1 + Random2,
+                                    data = df,method = method,
+                                    progsf90.options = 'EM-REML 10')
+        }
+        # if(dominance==TRUE){
+        #   mDom <- sommer::mmer(resp ~ Fixed1,
+        #                          random= ~ vs(idNum,Gu=D) + Random1 + Random2,
+        #                          rcov=~units,
+        #                          data=df %>% mutate(idNum = as.factor(idNum)), verbose = F)
+        #   
+        # }
+        mSig <- lme4::lmer(resp ~ Fixed1 + (1|Treat) + (1|Random1) + (1|Random2), data=df, control = control)
+      }
+      
+      if(length(fixed)==2&length(random)==0){
+        
+        df <- data %>% dplyr::select("Ind","idNum",treatment,"resp",fixed) %>% rename("Fixed"=fixed,"Treat"=3)
+        
+        if(treatment=="Prog"){
+          mAdd <- breedR::remlf90(fixed = resp ~ Fixed1 + Fixed2,
+                                  random = ~ 1,
+                                  genetic = list(model = "add_animal",
+                                                 pedigree = ped,id = "idNum"),
+                                  data = df,method = method,
+                                  progsf90.options = 'EM-REML 10')
+          
+        }else{
+          mClone <- breedR::remlf90(fixed = resp ~ Fixed1 + Fixed2,
+                                    random = ~ Treat,
+                                    data = df,method = method,
+                                    progsf90.options = 'EM-REML 10')
+        }
+        # if(dominance==TRUE){
+        #   mDom <- sommer::mmer(resp ~ Fixed1 + Fixed2,
+        #                          random= ~ vs(idNum,Gu=D),
+        #                          rcov=~units,
+        #                          data=df %>% mutate(idNum = as.factor(idNum)), verbose = F)
+        # }
+        mSig <- lme4::lmer(resp ~ Fixed1 + Fixed2 + (1|Treat), data=df, control = control)
+      }
+      
+      if(length(fixed)==2&length(random)==1){
+        
+        df <- data %>% dplyr::select("Ind","idNum",treatment,"resp",fixed,random) %>% rename("Fixed"=fixed,"Treat"=3,"Random1"=random)
+        
+        if(treatment=="Prog"){
+          mAdd <- breedR::remlf90(fixed = resp ~ Fixed1 + Fixed2,
+                                  random = ~ Random1,
+                                  genetic = list(model = "add_animal",
+                                                 pedigree = ped,id = "idNum"),
+                                  data = df,method = method,
+                                  progsf90.options = 'EM-REML 10')
+        }else{
+          mClone <- breedR::remlf90(fixed = resp ~ Fixed1 + Fixed2,
+                                    random = ~ Treat + Random1,
+                                    data = df,method = method,
+                                    progsf90.options = 'EM-REML 10')}      
+        
+        
+        # if(dominance==TRUE){
+        #   mDom <- sommer::mmer(resp ~ Fixed1 + Fixed2,
+        #                          random= ~ vs(idNum,Gu=D) + Random1,
+        #                          rcov=~units,
+        #                          data=df %>% mutate(idNum = as.factor(idNum)), verbose = F)
+        # }
+        mSig <- lme4::lmer(resp ~ Fixed1 + Fixed2 + (1|Treat) + (1|Random1), data=df, control = control)
+      }
+      
+      if(length(fixed)==2&length(random)==2){
+        
+        df <- data %>% dplyr::select("Ind","idNum",treatment,"resp",fixed,random) %>% rename("Fixed"=fixed,"Treat"=3,"Random"=random)
+        
+        if(any(random=="Proc")){
+          if(df$Random2==data$Proc){
+            df$Random2 <- df$Random1
+            df$Random1 <- data$Proc
+          }
+        }
+        
+        if(treatment=="Prog"){
+          mAdd <- breedR::remlf90(fixed = resp ~ Fixed1 + Fixed2,
+                                  random = ~ Random1 + Random2,
+                                  genetic = list(model = "add_animal",
+                                                 pedigree = ped,id = "idNum"),
+                                  data = df,method = method,
+                                  progsf90.options = 'EM-REML 10')
+          
+        }else{
+          mClone <- breedR::remlf90(fixed = resp ~ Fixed1 + Fixed2,
+                                    random = ~ Treat + Random1 + Random2,
+                                    data = df,method = method,
+                                    progsf90.options = 'EM-REML 10')
+        }
+        # if(dominance==TRUE){
+        #   mDom <- sommer::mmer(resp ~ Fixed1 + Fixed2,
+        #                          random= ~ vs(idNum,Gu=D) + Random1 + Random2,
+        #                          rcov=~units,
+        #                          data=df %>% mutate(idNum = as.factor(idNum)), verbose = F)
+        # }
+        mSig <- lme4::lmer(resp ~ Fixed1 + Fixed2 + (1|Treat) + (1|Random1) + (1|Random2), data=df, control = control)
+      }
+      
+      if(length(fixed)==3&length(random)==0){
+        
+        df <- data %>% dplyr::select("Ind","idNum",treatment,"resp",fixed) %>% rename("Fixed"=fixed,"Treat"=3)
+        
+        if(treatment=="Prog"){
+          mAdd <- breedR::remlf90(fixed = resp ~ Fixed1 + Fixed2 + Fixed3,
+                                  random = ~ 1,
+                                  genetic = list(model = "add_animal",
+                                                 pedigree = ped,id = "idNum"),
+                                  data = df,method = method,
+                                  progsf90.options = 'EM-REML 10')
+          
+        }else{
+          mClone <- breedR::remlf90(fixed = resp ~ Fixed1 + Fixed2 + Fixed3,
+                                    random = ~ Treat,
+                                    data = df,method = method,
+                                    progsf90.options = 'EM-REML 10')
+        }
+        # if(dominance==TRUE){
+        #   mDom <- sommer::mmer(resp ~ Fixed1 + Fixed2 + Fixed3,
+        #                          random= ~ vs(idNum,Gu=D),
+        #                          rcov=~units,
+        #                          data=df %>% mutate(idNum = as.factor(idNum)), verbose = F)
+        # }
+        mSig <- lme4::lmer(resp ~ Fixed1 + Fixed2 + Fixed3 + (1|Treat), data=df, control = control)
+      }
+      
+      if(length(fixed)==3&length(random)==1){
+        
+        df <- data %>% dplyr::select("Ind","idNum",treatment,"resp",fixed,random) %>% rename("Fixed"=fixed,"Treat"=3,"Random1"=random)
+        
+        if(treatment=="Prog"){
+          mAdd <- breedR::remlf90(fixed = resp ~ Fixed1 + Fixed2 + Fixed3,
+                                  random = ~ Random1,
+                                  genetic = list(model = "add_animal",
+                                                 pedigree = ped,id = "idNum"),
+                                  data = df,method = method,
+                                  progsf90.options = 'EM-REML 10')
+          
+        }else{
+          mClone <- breedR::remlf90(fixed = resp ~ Fixed1 + Fixed2 + Fixed3,
+                                    random = ~ Treat + Random1,
+                                    data = df,method = method,
+                                    progsf90.options = 'EM-REML 10')
+        }
+        # if(dominance==TRUE){
+        #   mDom <- sommer::mmer(resp ~ Fixed1 + Fixed2 + Fixed3,
+        #                          random= ~ vs(idNum,Gu=D) + Random1,
+        #                          rcov=~units,
+        #                          data=df %>% mutate(idNum = as.factor(idNum)), verbose = F)
+        # }
+        mSig <- lme4::lmer(resp ~ Fixed1 + Fixed2 + Fixed3 + (1|Treat) + (1|Random1), data=df, control = control)
+      }
+      
+      if(length(fixed)==3&length(random)==2){
+        
+        df <- data %>% dplyr::select("Ind","idNum",treatment,"resp",fixed,random) %>% rename("Fixed"=fixed,"Treat"=3,"Random"=random)
+        
+        if(any(random=="Proc")){
+          if(df$Random2==data$Proc){
+            df$Random2 <- df$Random1
+            df$Random1 <- data$Proc
+          }
+        }
+        if(treatment=="Prog"){
+          mAdd %<-% breedR::remlf90(fixed = resp ~ Fixed1 + Fixed2 + Fixed3,
+                                    random = ~ Random1 + Random2,
+                                    genetic = list(model = "add_animal",
+                                                   pedigree = ped,id = "idNum"),
+                                    data = df,method = method,
+                                    progsf90.options = 'EM-REML 10')
+          
+        }else{
+          mClone %<-% breedR::remlf90(fixed = resp ~ Fixed1 + Fixed2 + Fixed3,
+                                      random = ~ Treat + Random1 + Random2,
+                                      data = df,method = method,
+                                      progsf90.options = 'EM-REML 10')
+        }
+        # if(dominance==TRUE){
+        #   mDom <- sommer::mmer(resp ~ Fixed1 + Fixed2 + Fixed3,
+        #                          random= ~ vs(idNum,Gu=D) + Random1 + Random2,
+        #                          rcov=~units,
+        #                          data=df %>% mutate(idNum = as.factor(idNum)), verbose = F)
+        # }
+        mSig <- lme4::lmer(resp ~ Fixed1 + Fixed2 + Fixed3 + (1|Treat) + (1|Random1) + (1|Random2), data=df, control = control)
+      }
+    })
+    
+    convergence <- ifelse(treatment=="Prog",any(!is.na(mAdd$var[,1])),any(!is.na(mClone$var[,1])))
+    if(convergence==F){
+      cat("AI-REML algorithm did not converge, switching to EM-REML\n")
+      method = "em"
+    }}
+  options(warn = defaultW)
   
   if(treatment=="Prog"){
     
-    if(dominance==TRUE){
-      model.list <- lapply(c("Amodel","Progmodel","Dmodel"),get,envir=sys.frame(sys.parent(0)))
-    }else{
-      model.list <- lapply(c("Amodel","Progmodel"),get,envir=sys.frame(sys.parent(0))) 
-    }
+    # reliability_and_individual_blup -----------------------------------------
     
-    mAdd <- model.list[[1]]
-    mProg <- model.list[[2]]
-    if(dominance==TRUE){
-      mDom <- model.list[[3]]
-    }
+    r2Prog <- mAdd$ranef$genetic[[1]] %>% 
+      mutate(r2=1-(s.e./2)^2/(diag(diag(length(mAdd$ranef$genetic[[1]][,1])))*as.data.frame(mAdd$var)["Residual",1])) %>% 
+      filter(row_number() < nrow(nProg)+1) %>% add_column(Prog = nProg$Prog, .before = "value") %>% mutate(value=value) %>% mutate(s.e.=s.e.) %>% 
+      rename(a = value)
     
-    # accuracy by PEV ---------------------------------------------------------
+    r2Ind <- mAdd$ranef$genetic[[1]] %>% 
+      mutate(r2=1-s.e.^2/(diag(diag(length(mAdd$ranef$genetic[[1]][,1])))*as.data.frame(mAdd$var)["Residual",1])) %>% 
+      filter(row_number() > nrow(nProg)) %>% add_column(Ind = df$Ind, .before = "value") %>% filter(!is.na(resp)) %>% rename(a = value)
+    r2Ind_df <- r2Ind %>% 
+      {if (plotType=="LP") separate(.,Ind,c("Block","Progeny","Plot","Tree"),  sep="\\.") else separate(.,Ind,c("Block","Progeny","Tree"), sep="\\.")}
     
-    dfacc <- setNames(data.frame(sqrt(1-(diag(mProg$PevU$`Treat`$resp)/mProg$sigmaVector[1]))),"Accuracy") %>% 
-      rownames_to_column(.,var="Prog") %>% mutate(Prog = str_replace_all(Prog, 'Treat', ""))
-    accProg <- mean(dfacc$Accuracy, na.rm=T)
+    accInd <- mean(sqrt(1-((r2Ind$s.e.)^2)/mAdd$var["genetic",1]), na.rm=T)
+    accProg <- mean(sqrt(1-(((r2Prog$s.e./2))^2)/(mAdd$var["genetic",1]/4)), na.rm=T)
     
     
-    dfaccInd <- setNames(data.frame(sqrt(1-(diag(mAdd$PevU$`u:Ind`$resp)/mAdd$sigmaVector[1]))),"Accuracy") %>% 
-      rownames_to_column(.,var="Ind")
+    # genetic_parameters ------------------------------------------------------
     
-    if(plotType=="LP"){ 
-      dfaccInd <- separate(data=dfaccInd, Ind, c("Block","Progeny","Plot","Tree"), sep="\\.")
-    }
-    if(plotType=="STP"){
-      dfaccInd <- separate(data=dfaccInd, Ind, c("Block","Progeny","Tree"), sep="\\.") 
-    }
-    
-    accInd <- mean(dfaccInd$Accuracy, na.rm=T)
-    
-    # Genetic Parameters
-    
-    vA <- mAdd$sigmaVector[1]
-    SEvA <- sqrt(diag(mAdd$sigmaSE))[1]
-    
-    # Average Mean dn CVgi  
+    vA <- mAdd$var["genetic",1]
+    vE <- mAdd$var["Residual",1]
     Mean <- mean(df$resp,na.rm=T)
+    nRep <- length(unique(data$Rep))
     CVgi <- sqrt(vA)/Mean*100
     
     # Linear plot
     if(plotType=="LP"){
-      nArv <- length(levels(factor(data$Arv)))
-      nRep <- length(levels(factor(data$Rep)))
+      nArv <- length(unique(data$Arv))
+      vParc <- mAdd$var["Parc",1]
+      h2d <- (0.75*vA) / (0.75*vA+vE)
+      CVe = (sqrt((0.75*vA+vE)/nArv+vParc))/Mean*100
       
       if(length(random)==0){
-        vParc <- mAdd$sigmaVector[2]
-        vE <- mAdd$sigmaVector[3]
-        SEvParc <- sqrt(diag(mAdd$sigmaSE))[2]
-        SEvE <- sqrt(diag(mAdd$sigmaSE))[3]
         vPhen <- vA + vParc + vE
         c2Parc <- vParc/vPhen
-        h2aSE <- sommer::vpredict(mAdd, h2a ~ (V1) / (V1+V2+V3))
-        h2dSE <- sommer::vpredict(mAdd, h2d ~ (0.75*V1) / (0.75*V1+V3))
+        h2a <- vA/vPhen
         h2m <- (0.25*vA) / (0.25*vA+(vParc/nRep)+vE/(nRep*nArv))
-        CVe = (sqrt((0.75*vA+vE)/nArv+vParc))/Mean*100
         
-        # genPar
         genParNames<- c("vA","vParc","vE","vPhen","h2a","h2d","h2m","c2Parc","accProg","accInd","CVgi%","CVe%","Mean")
-        genPar <- round(data.frame(Estimates=c(vA,vParc,vE,vPhen,h2aSE$Estimate,h2dSE$Estimate,h2m,c2Parc,accProg,accInd,CVgi,CVe,Mean), 
-                                   SE=c(SEvA,SEvParc,SEvE,NA,h2aSE$SE,h2dSE$SE,matrix(NA,nrow=7,ncol=1)), 
-                                   row.names = genParNames),genPar_digits)
-        genPar[is.na(genPar)] <- " "
+        
+        if(method=="ai"){
+          h2a <- mAdd$funvars["mean",1]
+          SEvA <- mAdd$var["genetic",2]
+          SEvParc <- mAdd$var["Parc",2]
+          SEvE <- mAdd$var["Residual",2]
+          h2aSE <- mAdd$funvars["sample sd",1]
+          
+          genPar <- round(data.frame(Estimates=c(vA,vParc,vE,vPhen,h2a,h2d,h2m,c2Parc,accProg,accInd,CVgi,CVe,Mean), 
+                                     SE=c(SEvA,SEvParc,SEvE,NA,h2aSE,matrix(NA,nrow=8,ncol=1)), 
+                                     row.names = genParNames),genPar_digits)
+        }else{
+          genPar <- round(data.frame(Estimates=c(vA,vParc,vE,vPhen,h2a,h2d,h2m,c2Parc,accProg,accInd,CVgi,CVe,Mean),
+                                     row.names = genParNames),genPar_digits)
+        }
+        
       }
       if(length(random)==1){
-        vParc <- mAdd$sigmaVector[2]
-        vRdm1 <- mAdd$sigmaVector[3]
-        vE <- mAdd$sigmaVector[4]
-        SEvParc <- sqrt(diag(mAdd$sigmaSE))[2]
-        SEvRdm1 <- sqrt(diag(mAdd$sigmaSE))[3]
-        SEvE <- sqrt(diag(mAdd$sigmaSE))[4]
+        vRdm1 <- mAdd$var["Random1",1]
         vPhen <- vA + vParc + vRdm1 + vE
+        h2a <- vA/vPhen
         c2Parc <- vParc/vPhen
         c2Rdm1 <- vRdm1/vPhen
-        h2aSE <- sommer::vpredict(mAdd, h2a ~ (V1) / (V1+V2+V3+V4))
-        h2dSE <- sommer::vpredict(mAdd, h2d ~ (0.75*V1) / (0.75*V1+V4))
-        CVe = (sqrt((0.75*vA+vE)/nArv+vParc))/Mean*100
         
-        # genPar
         genParNames <- c("vA","vParc","vRdm1","vE","vPhen","h2a","h2d","c2Parc","c2Rdm1","accProg","accInd","CVgi%","CVe%","Mean")
-        genPar <- round(data.frame(Estimates=c(vA,vParc,vRdm1,vE,vPhen,h2aSE$Estimate,h2dSE$Estimate,c2Parc,c2Rdm1,accProg,accInd,CVgi,CVe,Mean), 
-                                   SE=c(SEvA,SEvParc,SEvRdm1,SEvE,NA,h2aSE$SE,h2dSE$SE,matrix(NA,nrow=7,ncol=1)), 
-                                   row.names = genParNames),genPar_digits)
-        genPar[is.na(genPar)] <- " "
+        
+        if(method=="ai"){
+          h2a <- mAdd$funvars["mean",1]
+          SEvA <- mAdd$var["genetic",2]
+          SEvParc <- mAdd$var["Parc",2]
+          SEvRdm1 <- mAdd$var["Random1",2]
+          SEvE <- mAdd$var["Residual",2]
+          h2aSE <- mAdd$funvars["sample sd",1]
+          
+          genPar <- round(data.frame(Estimates=c(vA,vParc,vRdm1,vE,vPhen,h2a,h2d,c2Parc,c2Rdm1,accProg,accInd,CVgi,CVe,Mean), 
+                                     SE=c(SEvA,SEvParc,SEvRdm1,SEvE,NA,h2aSE,matrix(NA,nrow=8,ncol=1)), 
+                                     row.names = genParNames),genPar_digits)
+        }else{
+          genPar <- round(data.frame(Estimates=c(vA,vParc,vRdm1,vE,vPhen,h2a,h2d,c2Parc,c2Rdm1,accProg,accInd,CVgi,CVe,Mean),
+                                     row.names = genParNames),genPar_digits)
+        }
+        
       }
       if(length(random)==2){
-        vParc <- mAdd$sigmaVector[2]
-        vRdm1 <- mAdd$sigmaVector[3]
-        vRdm2 <- mAdd$sigmaVector[4]
-        vE <- mAdd$sigmaVector[5]
-        SEvParc <- sqrt(diag(mAdd$sigmaSE))[2]
-        SEvRdm1 <- sqrt(diag(mAdd$sigmaSE))[3]
-        SEvRdm1 <- sqrt(diag(mAdd$sigmaSE))[4]
-        SEvE <- sqrt(diag(mAdd$sigmaSE))[5]
+        vRdm1 <- mAdd$var["Random1",1]
+        vRdm2 <- mAdd$var["Random2",1]
         vPhen <- vA + vParc + vRdm1 + vRdm2 + vE
+        h2a <- vA/vPhen
         c2Parc <- vParc/vPhen
         c2Rdm1 <- vRdm1/vPhen
         c2Rdm2 <- vRdm2/vPhen
-        h2aSE <- sommer::vpredict(mAdd, h2a ~ (V1) / (V1+V2+V3+V4+V5))
-        h2dSE <- sommer::vpredict(mAdd, h2d ~ (0.75*V1) / (0.75*V1+V5))
-        CVe = (sqrt((0.75*vA+vE)/nArv+vParc))/Mean*100
         
-        # genPar
         genParNames <- c("vA","vParc","vRdm1","vRdm2","vE","vPhen","h2a","h2d","c2Parc","c2Rdm1","c2Rdm2","accProg","accInd","CVgi%","CVe%","Mean")
-        genPar <- round(data.frame(Estimates=c(vA,vParc,vRdm1,vRdm2,vE,vPhen,h2aSE$Estimate,h2dSE$Estimate,c2Parc,c2Rdm1,c2Rdm2,accProg,accInd,CVgi,CVe,Mean), 
-                                   SE=c(SEvA,SEvParc,SEvRdm1,SEvRdm2,SEvE,NA,h2aSE$SE,h2dSE$SE,matrix(NA,nrow=8,ncol=1)), 
-                                   row.names = genParNames),genPar_digits)
-        genPar[is.na(genPar)] <- " "
+        
+        if(method=="ai"){
+          h2a <- mAdd$funvars["mean",1]
+          SEvA <- mAdd$var["genetic",2]
+          SEvParc <- mAdd$var["Parc",2]
+          SEvRdm1 <- mAdd$var["Random1",2]
+          SEvRdm2 <- mAdd$var["Random2",2]
+          SEvE <- mAdd$var["Residual",2]
+          h2aSE <- mAdd$funvars["sample sd",1]
+          
+          genPar <- round(data.frame(Estimates=c(vA,vParc,vRdm1,vRdm2,vE,vPhen,h2aSE,h2dSE,c2Parc,c2Rdm1,c2Rdm2,accProg,accInd,CVgi,CVe,Mean), 
+                                     SE=c(SEvA,SEvParc,SEvRdm1,SEvRdm2,SEvE,NA,h2aSE,matrix(NA,nrow=9,ncol=1)), 
+                                     row.names = genParNames),genPar_digits)
+        }else{
+          genPar <- round(data.frame(Estimates=c(vA,vParc,vRdm1,vRdm2,vE,vPhen,h2aSE,h2dSE,c2Parc,c2Rdm1,c2Rdm2,accProg,accInd,CVgi,CVe,Mean),
+                                     row.names = genParNames),genPar_digits)
+        }
+        
       }}
     # Single tree plot
     if(plotType=="STP"){
-      nRep <- length(levels(factor(data$Rep)))
-      
+      CVe = sqrt(0.75*vA+vE)/Mean*100
       
       if(length(random)==0){
-        vE <- mAdd$sigmaVector[2]
-        SEvE <- sqrt(diag(mAdd$sigmaSE))[2]
         vPhen <- vA + vE
-        h2aSE <- sommer::vpredict(mAdd, h2a ~ (V1) / (V1+V2))
+        h2a <- vA/vPhen
         h2m <- (0.25*vA) / (0.25*vA+vE/(nRep))
-        CVe = sqrt(0.75*vA+vE)/Mean*100
         
-        # genPar
         genParNames <- c("vA","vE","vPhen","h2a","h2m","accProg","accInd","CVgi%","CVe%","Mean")
-        genPar <- round(data.frame(Estimates=c(vA,vE,vPhen,h2aSE$Estimate,h2m,accProg,accInd,CVgi,CVe,Mean), 
-                                   SE=c(SEvA,SEvE,NA,h2aSE$SE,matrix(NA,nrow=6,ncol=1)), 
-                                   row.names = genParNames),genPar_digits)
-        genPar[is.na(genPar)] <- " "
+        
+        if(method=="ai"){
+          h2a <- mAdd$funvars["mean",1]
+          SEvA <- mAdd$var["genetic",2]
+          SEvE <- mAdd$var["Residual",2]
+          h2aSE <- mAdd$funvars["sample sd",1]
+          
+          genPar <- round(data.frame(Estimates=c(vA,vE,vPhen,h2a,h2m,accProg,accInd,CVgi,CVe,Mean), 
+                                     SE=c(SEvA,SEvE,NA,h2aSE,matrix(NA,nrow=6,ncol=1)), 
+                                     row.names = genParNames),genPar_digits)
+        }else{
+          genPar <- round(data.frame(Estimates=c(vA,vE,vPhen,h2a,h2m,accProg,accInd,CVgi,CVe,Mean),
+                                     row.names = genParNames),genPar_digits)
+        }
       }
       if(length(random)==1){
-        vRdm1 <- mAdd$sigmaVector[2]
-        vE <- mAdd$sigmaVector[3]
-        SEvRdm1 <- sqrt(diag(mAdd$sigmaSE))[2]
-        SEvE <- sqrt(diag(mAdd$sigmaSE))[3]
+        vRdm1 <- mAdd$var["Random1",1]
         vPhen <- vA + vRdm1 + vE
+        h2a <- vA/vPhen
         c2Rdm1 <- vRdm1/vPhen
-        h2aSE <- sommer::vpredict(mAdd, h2a ~ (V1) / (V1+V2+V3))
-        CVe = sqrt(0.75*vA+vE)/Mean*100
         
-        # genPar
         genParNames <- c("vA","vRdm1","vE","vPhen","h2a","c2Rdm1","accProg","accInd","CVgi%","CVe%","Mean")
-        genPar <- round(data.frame(Estimates=c(vA,vRdm1,vE,vPhen,h2aSE$Estimate,c2Rdm1,accProg,accInd,CVgi,CVe,Mean), 
-                                   SE=c(SEvA,SEvRdm1,SEvE,NA,h2aSE$SE,matrix(NA,nrow=6,ncol=1)), 
-                                   row.names = genParNames),genPar_digits)
-        genPar[is.na(genPar)] <- " "
+        
+        if(method=="ai"){
+          h2a <- mAdd$funvars["mean",1]
+          SEvA <- mAdd$var["genetic",2]
+          SEvRdm1 <- mAdd$var["Random1",2]
+          SEvE <- mAdd$var["Residual",2]
+          h2aSE <- mAdd$funvars["sample sd",1]
+          
+          genPar <- round(data.frame(Estimates=c(vA,vRdm1,vE,vPhen,h2a,c2Rdm1,accProg,accInd,CVgi,CVe,Mean), 
+                                     SE=c(SEvA,SEvRdm1,SEvE,NA,h2aSE,matrix(NA,nrow=6,ncol=1)), 
+                                     row.names = genParNames),genPar_digits)
+        }else{
+          genPar <- round(data.frame(Estimates=c(vA,vRdm1,vE,vPhen,h2a,c2Rdm1,accProg,accInd,CVgi,CVe,Mean),
+                                     row.names = genParNames),genPar_digits)
+        }
       }
       if(length(random)==2){
-        vRdm1 <- mAdd$sigmaVector[2]
-        vRdm2 <- mAdd$sigmaVector[3]
-        vE <- mAdd$sigmaVector[4]
-        SEvRdm1 <- sqrt(diag(mAdd$sigmaSE))[2]
-        SEvRdm2 <- sqrt(diag(mAdd$sigmaSE))[3]
-        SEvE <- sqrt(diag(mAdd$sigmaSE))[4]
+        vRdm1 <- mAdd$var["Random1",1]
+        vRdm2 <- mAdd$var["Random2",1]
         vPhen <- vA + vRdm1 + vRdm2 + vE
-        c2Rdm1 <- vRdm1/vPhen
-        c2Rdm2 <- vRdm2/vPhen
-        h2aSE <- sommer::vpredict(mAdd, h2a ~ (V1) / (V1+V2+V3+V4))
-        CVe = sqrt(0.75*vA+vE)/Mean*100
+        h2a <- vA/vPhen
         
-        # genPar
         genParNames <- c("vA","vRdm1","vRdm2","vE","vPhen","h2a","c2Rdm1","c2Rdm2","accProg","accInd","CVgi%","CVe%","Mean")
-        genPar <- round(data.frame(Estimates=c(vA,vRdm1,vE,vPhen,h2aSE$Estimate,c2Rdm1,c2Rdm1,accProg,accInd,CVgi,CVe,Mean), 
-                                   SE=c(SEvA,SEvRdm1,SEvE,NA,h2aSE$SE,matrix(NA,nrow=7,ncol=1)), 
-                                   row.names = genParNames),genPar_digits)
-        genPar[is.na(genPar)] <- " "
-      }}
-    
-    # individual_and_progeny_BLUP ---------------------------------------------
-    
-    require(tidyr)
-    
-    # Creating Cod if it doesn't exists
-    if(!("Cod" %in% colnames(data))){
-      data$Cod = " "
+        
+        if(method=="ai"){
+          h2a <- mAdd$funvars["mean",1]
+          SEvRdm1 <- mAdd$var["Random1",2]
+          SEvRdm2 <- mAdd$var["Random2",2]
+          SEvE <- mAdd$var["Residual",2]
+          h2aSE <- mAdd$funvars["sample sd",1]
+          
+          genPar <- round(data.frame(Estimates=c(vA,vRdm1,vE,vPhen,h2a,c2Rdm1,c2Rdm1,accProg,accInd,CVgi,CVe,Mean), 
+                                     SE=c(SEvA,SEvRdm1,SEvE,NA,h2aSE,matrix(NA,nrow=7,ncol=1)), 
+                                     row.names = genParNames),genPar_digits)
+          
+        }else{
+          genPar <- round(data.frame(Estimates=c(vA,vRdm1,vE,vPhen,h2aSE$Estimate,c2Rdm1,c2Rdm1,accProg,accInd,CVgi,CVe,Mean),
+                                     row.names = genParNames),genPar_digits)
+        }}
     }
+    genPar[is.na(genPar)] <- " "
     
-    # Progeny BLUP and overlapping generations
-    progBLUP <- mProg$U$Treat$resp %>% data.frame() %>% setNames("BLUP") %>% rownames_to_column(.,"Progeny") %>% 
-      mutate(Progeny = str_replace_all(Progeny, 'Treat', ""), BLUP = BLUP*2) %>% arrange(desc(BLUP))
+    # BLUP_dataframes ---------------------------------------------------------
     
-        # Individual BLUP
-    indBLUP <- mAdd$U$`u:Ind`$resp %>% data.frame %>% setNames("BLUP") %>% rownames_to_column(.,"Ind")
+    # Progeny BLUP
+    progBLUP <- r2Prog %>% dplyr::select(Prog,a) %>% rename(Progeny=Prog) %>% arrange(desc(a))
     
-    # Phenotypic and cod data
-    phenoCodData <- data %>% select(Ind,Cod,resp) %>% rename(.,f = resp)
+    # Individual_BLUP_genetic_gain_and_effectve_population_size --------------- 
+    indBLUP <- data %>% left_join(.,r2Ind[,1:2],by="Ind") %>% 
+      {if (any(random=="Proc")||any(fixed=="Proc")) dplyr::select(.,Proc,Ind,resp,a,Cod) else dplyr::select(.,Ind,resp,a,Cod)} %>% rename(f=resp) %>% 
+      {if (plotType=="LP") separate(.,Ind,c("Block","Progeny","Plot","Tree"),  sep="\\.") else separate(.,Ind,c("Block","Progeny","Tree"), sep="\\.")} %>% 
+      mutate("u+a" = Mean+a) %>% drop_na() %>% arrange(desc(a))
     
-    if(any(random=="Proc")||any(fixed=="Proc")){
-      phenoCodData <- setNames(subset(data, select = c("Ind","Cod","Proc","resp")),c("Ind","Cod","Proc","f"))
+    # Absolute and percentual genetic gain
+    gain <- matrix(nrow=nrow(indBLUP), ncol=1)
+    for(i in 1:nrow(indBLUP)){
+      gain[i,] <- mean(indBLUP$a[1:i])
     }
+    indBLUP <- indBLUP %>% mutate(Gain=gain) %>% mutate("Gain%"=gain/Mean*100)
     
-    dfblup <- merge(indBLUP,phenoCodData,by="Ind")
+    # Effective population size
+    dfNe <- matrix(nrow=nrow(indBLUP), ncol=1)
     
-    if(dominance==TRUE){
-      domBLUP <- mDom$U$`u:Ind`$resp %>% data.frame %>% setNames("d") %>% rownames_to_column(.,"Ind")
-      dfblup <- merge(dfblup,domBLUP,by="Ind")
-      dfblup$g <- dfblup$BLUP+dfblup$d
+    for(i in 1:nrow(indBLUP)){
+      varkf <- as.vector(table(indBLUP$Progeny[1:i]))
+      dfNe[i,] <- var(varkf)
     }
+    dfNe[is.na(dfNe)] <- 0
     
-    if(plotType=="LP"){ 
-      dfblupInd <- separate(data=dfblup, col = Ind, into = c("Block","Progeny","Plot","Tree"), sep="\\.")
-      overBLUP <- progBLUP %>% mutate(Block = 0, Plot = 0, Tree = 0, Cod = "Parent") %>% relocate(Block,Progeny,Plot,Tree,BLUP,Cod)
-    }
-    if(plotType=="STP"){
-      dfblupInd <- separate(data=dfblup, col = Ind, into = c("Block","Progeny","Tree"), sep="\\.")
-      overBLUP <- progBLUP %>% mutate(Block = 0, Tree = 0, Cod = "Parent") %>% relocate(Block,Progeny,Tree,BLUP,Cod)
-    }
+    indBLUP <- indBLUP %>% mutate(Np = cumsum(!duplicated(indBLUP$Progeny))) %>% mutate(seq = seq(1:nrow(indBLUP))) %>% mutate(Kf = seq/Np) %>% 
+      mutate(varkf = dfNe) %>% mutate(Ne = (4*Np*Kf)/(3+Kf+(varkf/Kf))) %>% dplyr::select(.,-c("Np","seq","Kf","varkf")) %>% 
+      relocate(Cod, .after = last_col())
+    
+    #if(dominance==TRUE){
+    #domBLUP <- mDom$U$`u:Ind`$resp %>% data.frame %>% setNames("d") %>% rownames_to_column(.,"Ind")
+    #dfblup <- merge(dfblup,domBLUP,by="Ind")
+    #dfblup$g <- dfblup$BLUP+dfblup$d
+    #}
+    
+    # Overlapping generations
+    overBLUP <- progBLUP %>% {if (plotType=="LP") mutate(.,Block = 0, Plot = 0, Tree = 0, Cod = "Parent") %>% 
+        relocate(Block,Progeny,Plot,Tree,a,Cod) else mutate(.,Block = 0, Tree = 0, Cod = "Parent") %>% relocate(Block,Progeny,Tree,a,Cod)} %>% 
+      rbind(.,indBLUP[,colnames(.)]) %>% arrange(desc(a))
     
     # Provenance BLUP
     if(any(random=="Proc")){
-      procBLUP <- mAdd$U$Random1$resp %>% data.frame() %>% setNames("procBLUP") %>% rownames_to_column(.,"Provenance") %>% 
-        mutate(Provenance = str_replace_all(Provenance, 'Random1', "")) %>% arrange(desc(procBLUP))
-      
-      dfblupInd <- dfblupInd %>%  merge(.,procBLUP, by.x="Proc",by.y="Provenance")
-      dfblupInd$BLUP <- dfblupInd$BLUP+dfblupInd$procBLUP
-      dfblupInd <- dfblupInd[,-which(names(dfblupInd)%in%"procBLUP")]
+      procBLUP <- mAdd$ranef$Random1[[1]] %>% rownames_to_column(.,"Proc") %>% rename(BLUP=value) %>% arrange(desc(BLUP))
+      indBLUP <- indBLUP %>% left_join(.,procBLUP[,1:2],by="Proc") %>% mutate(a=a+BLUP) %>% dplyr::select(.,-last_col())
     }
     
-    # Organizing overlapping generation BLUP
-    if(dominance){
-      overBLUP <- dfblupInd %>% select (-c(d,f,g)) %>% rbind(.,overBLUP) %>% arrange(desc(BLUP))
-    }else{
-      overBLUP <- dfblupInd %>% select (-f) %>% rbind(.,overBLUP) %>% arrange(desc(BLUP))
-    }
-    
-    # BLUP + mean and arrange
-    
-    dfblupInd$"u+a" <- dfblupInd$BLUP+Mean
-    blupOrd <- arrange(dfblupInd,desc(dfblupInd$BLUP))
-    
-    # Absolute and percentual genetic gain
-    gain <- matrix(nrow=nrow(blupOrd), ncol=1)
-    
-    for(i in 1:nrow(blupOrd)){
-      gain[i,] <- mean(blupOrd$BLUP[1:i])
-    }
-    blupOrd$Gain <- gain
-    blupOrd$"Gain%" <- (blupOrd$Gain/Mean)*100
-    
-    # effective_number_size_and_genetic_gain ----------------------------------
-    
-    dfNe <- matrix(nrow=nrow(blupOrd), ncol=1)
-    
-    for(i in 1:nrow(blupOrd)){
-      varkf <- as.vector(table(blupOrd$Progeny[1:i]))
-      dfNe[i,] <- var(varkf)
-    }
-    blupOrd$Np <- cumsum(!duplicated(blupOrd$Progeny))
-    blupOrd$seq <- seq(1:nrow(blupOrd))
-    blupOrd$Kf <- blupOrd$seq/blupOrd$Np
-    dfNe[is.na(dfNe)] <- 0
-    blupOrd$varkf <- dfNe
-    blupOrd$Ne <- (4*blupOrd$Np*blupOrd$Kf)/(3+blupOrd$Kf+(blupOrd$varkf/blupOrd$Kf))
-    blupOrd <- blupOrd[,!names(blupOrd) %in% c("Np","seq","Kf","varkf")]
-    
-    
-    if(dominance==TRUE){
-      if(plotType=="LP"&(any(random=="Proc")||any(fixed=="Proc"))){
-        order <- c("Proc","Block","Progeny","Plot","Tree","f","BLUP","u+a","Gain","Gain%","Ne","d","g","Cod")
-      }
-      if(plotType=="LP"&((any(random=="Proc")||any(fixed=="Proc")))==FALSE){
-        order <- c("Block","Progeny","Plot","Tree","f","BLUP","u+a","Gain","Gain%","Ne","d","g","Cod")
-      }
-      if(plotType=="STP"&(any(random=="Proc")||any(fixed=="Proc"))){
-        order <- c("Proc","Block","Progeny","Tree","f","BLUP","u+a","Gain","Gain%","Ne","d","g","Cod")
-      }
-      if(plotType=="STP"&((any(random=="Proc")||any(fixed=="Proc")))==FALSE){
-        order <- c("Block","Progeny","Tree","f","BLUP","u+a","Gain","Gain%","Ne","d","g","Cod")
-      }
-    }else{
-      if(plotType=="LP"&(any(random=="Proc")||any(fixed=="Proc"))){
-        order <- c("Proc","Block","Progeny","Plot","Tree","f","BLUP","u+a","Gain","Gain%","Ne","Cod")
-      }
-      if(plotType=="LP"&((any(random=="Proc")||any(fixed=="Proc")))==FALSE){
-        order <- c("Block","Progeny","Plot","Tree","f","BLUP","u+a","Gain","Gain%","Ne","Cod")
-      }
-      if(plotType=="STP"&(any(random=="Proc")||any(fixed=="Proc"))){
-        order <- c("Proc","Block","Progeny","Tree","f","BLUP","u+a","Gain","Gain%","Ne","Cod")
-      }
-      if(plotType=="STP"&((any(random=="Proc")||any(fixed=="Proc")))==FALSE){
-        order <- c("Block","Progeny","Tree","f","BLUP","u+a","Gain","Gain%","Ne","Cod")
-      }}
-    blupOrdered <- blupOrd[,order]
-    rownames(blupOrdered) <- NULL
+    # otimize_selection -------------------------------------------------------
     
     if(otimizeSelection==TRUE){
       
-      rankBLUP <- blupOrdered
+      rankBLUP <- indBLUP
+      
       if(!is.null(excludeControl)){
-        rankBLUP <- rankBLUP[!rankBLUP$Progeny %in% excludeControl,]
+        rankBLUP <- indBLUP[!indBLUP$Progeny %in% excludeControl,]
       }
       if(!is.null(excludeCod)){
-        rankBLUP <- rankBLUP[!rankBLUP$Cod %in% excludeCod,]
+        rankBLUP <- indBLUP[!indBLUP$Cod %in% excludeCod,]
       }
       
-      #Filtering using the maximum number of individuals per progeny admitted in the whole otimization
-      rankBLUP$Np_csum <- ave(rankBLUP$Progeny==rankBLUP$Progeny, 
-                              rankBLUP$Progeny, FUN=cumsum) 
-      rankBLUP <- rankBLUP[!rankBLUP$Np_csum > maxIndProgeny,] 
+      # Filtering using the maximum number of individuals per progeny, then the max number of progenies addmited in the same block
+      rankBLUP <- rankBLUP %>% mutate(Np_csum = ave(Progeny==Progeny, Progeny, FUN=cumsum)) %>% filter(Np_csum <= maxIndProgeny) %>% 
+        mutate(RP = paste0(Block,Progeny)) %>% mutate(RP_csum = ave(RP==RP,RP, FUN=cumsum)) %>% 
+        filter(RP_csum <= maxProgenyBlock) %>% select(.,-c("Np_csum","RP","RP_csum"))
       
-      #Filtering using the maximum number of progenies admitted at the same block repetition
-      rankBLUP$R_P <- paste0(rankBLUP$Block,rankBLUP$Progeny)
-      rankBLUP$R_Pcsum <- ave(rankBLUP$R_P==rankBLUP$R_P, 
-                              rankBLUP$R_P, FUN=cumsum) 
-      rankBLUP <- rankBLUP[!rankBLUP$R_Pcsum > maxProgenyBlock,]
+      # recalculating effective population size and genetic gain
       
-      rankBLUP <- rankBLUP[, !names(rankBLUP) %in% c("Np_csum","R_P","R_Pcsum")] 
-      
-      #Genetic Gain
-      gain <- matrix(nrow=nrow(rankBLUP), ncol=1)
-      
-      for(i in 1:nrow(rankBLUP)){
-        gain[i,] <- mean(rankBLUP$BLUP[1:i])
-      }
-      rankBLUP$Gain <- gain
-      rankBLUP$"Gain%" <- (rankBLUP$Gain/mean(resp, na.rm=T))*100
-      
-      #Effective number size
       dfNe <- matrix(nrow=nrow(rankBLUP), ncol=1)
       
       for(i in 1:nrow(rankBLUP)){
         varkf <- as.vector(table(rankBLUP$Progeny[1:i]))
         dfNe[i,] <- var(varkf)
       }
-      rankBLUP$Np <- cumsum(!duplicated(rankBLUP$Progeny))
-      rankBLUP$seq <- seq(1:nrow(rankBLUP))
-      rankBLUP$Kf <- rankBLUP$seq/rankBLUP$Np
       dfNe[is.na(dfNe)] <- 0
-      rankBLUP$varkf <- dfNe
-      rankBLUP$Ne <- (4*rankBLUP$Np*rankBLUP$Kf)/(3+rankBLUP$Kf+(rankBLUP$varkf/rankBLUP$Kf))
-      otimizedBLUP <- rankBLUP[,!names(rankBLUP) %in% c("Np","seq","Kf","varkf")]
-      rownames(otimizedBLUP) <- NULL
+      
+      otimizedBLUP <- rankBLUP %>% mutate(Np = cumsum(!duplicated(rankBLUP$Progeny))) %>% mutate(seq = seq(1:nrow(rankBLUP))) %>% mutate(Kf = seq/Np) %>% 
+        mutate(varkf = dfNe) %>% mutate(Ne = (4*Np*Kf)/(3+Kf+(varkf/Kf))) %>% dplyr::select(.,-c("Np","seq","Kf","varkf")) %>% 
+        relocate(Cod, .after = last_col())
     }
     
     
@@ -1011,25 +988,20 @@ genBLUP <- function(data, varResp, treatment = c("Prog","Clone"), plotType = c("
     genParBLUP <- list()
     
     # exploratory_analysis -------------------------------------------------
-    genParBLUP$expAnalysis$respMeans <- respMeans
-    genParBLUP$expAnalysis$progMeans <- treatMeans
-    genParBLUP$expAnalysis$repMeans <- repMeans
+    genParBLUP$expAnalysis$respMeans <- respMeans; genParBLUP$expAnalysis$progMeans <- treatMeans; genParBLUP$expAnalysis$repMeans <- repMeans
     
     # model_output_and_significance_tests -------------------------------------------------
-    genParBLUP$Model$mmerModel <- mAdd
-    genParBLUP$Model$mSig$fixedSig <- anova(mSig)
+    genParBLUP$Model$remlMethod <- method; genParBLUP$Model$remlModel <- mAdd; genParBLUP$Model$mSig$fixedSig <- anova(mSig)
     genParBLUP$Model$mSig$randomSig <- lmerTest::ranova(mSig, reduce.terms = F)
     
     # genetic_parameters_accuracy_and_Blup -------------------------------------------------
-    genParBLUP$genPar <- genPar
-    genParBLUP$accuracyPEV$progPEV <- dfacc
-    genParBLUP$accuracyPEV$indPEV <- dfaccInd
-    genParBLUP$BLUP$progBLUP <- progBLUP
-    genParBLUP$BLUP$indBLUP <- blupOrdered
-    genParBLUP$BLUP$overBLUP <- overBLUP
+    genParBLUP$genPar <- genPar; genParBLUP$blupAccuracy$progAccuracy <- r2Prog; genParBLUP$blupAccuracy$indAccuracy <- r2Ind_df 
+    genParBLUP$BLUP$progBLUP <- progBLUP; genParBLUP$BLUP$indBLUP <- indBLUP; genParBLUP$BLUP$overBLUP <- overBLUP
     
     if(any(random=="Proc")){
-      genParBLUP$BLUP$procBLUP <- dfblupProc
+      genParBLUP$BLUP$procBLUP <- procBLUP
+    }
+    if(any(fixed=="Proc")){
       genParBLUP$expAnalysis$procMeans <- procMeans
     }
     
@@ -1037,195 +1009,219 @@ genBLUP <- function(data, varResp, treatment = c("Prog","Clone"), plotType = c("
       genParBLUP$BLUP$otimizedBLUP <- otimizedBLUP
     }
   }
-  
   if(treatment=="Clone"){
     
-    mProg <- lapply("Progmodel",get,envir=sys.frame(sys.parent(0)))[[1]] 
+    # reliability_and_individual_blup -----------------------------------------
     
-    # accuracyPEV
+    r2Clone <- mClone$ranef$Treat[[1]] %>% 
+      mutate(r2=1-(s.e./2)^2/(diag(diag(length(mClone$ranef$Treat[[1]][,1])))*as.data.frame(mClone$var)["Residual",1])) %>% 
+      rownames_to_column("Clone") %>% rename(g = value)
     
-    dfacc <- setNames(data.frame(sqrt(1-(diag(mProg$PevU$`Treat`$resp)/mProg$sigmaVector[1]))),"Accuracy") %>% 
-      rownames_to_column(.,var="Clone") %>% mutate(Clone = str_replace_all(Clone, 'Treat', ""))
-    accClone <- mean(dfacc$Accuracy, na.rm=T)
+    accClone <- mean(sqrt(1-(((r2Clone$s.e./2))^2)/(mClone$var["Treat",1]/4)), na.rm=T)
     
     # Genetic Parameters
-    vG <- mProg$sigmaVector[1]
-    SEvG <- sqrt(diag(mProg$sigmaSE))[1]
-    
-    # Average Mean and CVg  
+    vG <- mClone$var["Treat",1]
+    vE <- mClone$var["Residual",1]
     Mean <- mean(df$resp,na.rm=T)
+    nRep <- length(unique(data$Rep))
     CVg <- sqrt(vG)/Mean*100
     
-    # Linear plot
     if(plotType=="LP"){
-      nArv <- length(levels(factor(data$Arv)))
-      nRep <- length(levels(factor(data$Rep)))
+      nArv <- length(unique(data$Arv))
+      vParc <- mClone$var["Parc",1]
+      CVe = (sqrt((3*vG+vE)/nArv+vParc))/Mean*100
       
       if(length(random)==0){
-        
-        vParc <- mProg$sigmaVector[2]
-        vE <- mProg$sigmaVector[3]
-        SEvParc <- sqrt(diag(mProg$sigmaSE))[2]
-        SEvE <- sqrt(diag(mProg$sigmaSE))[3]
         vPhen <- vG + vParc + vE
         c2Parc <- vParc/vPhen
-        h2GSE <- sommer::vpredict(mProg, h2G ~ (V1) / (V1+V2+V3))
+        h2G <- vG/vPhen
         h2mc <- (vG) / (vG+(vParc/nRep)+vE/(nRep*nArv))
-        CVe = (sqrt((3*vG+vE)/nArv+vParc))/Mean*100
         
-        # genPar
         genParNames <- c("vG","vParc","vE","vPhen","h2G","h2mc","c2Parc","accClone","CVg%","CVe%","Mean")
-        genPar <- round(data.frame(Estimates=c(vG,vParc,vE,vPhen,h2GSE$Estimate,h2mc,c2Parc,accClone,CVg,CVe,Mean), 
-                                   SE=c(SEvG,SEvParc,SEvE,NA,h2GSE$SE,matrix(NA,nrow=6,ncol=1)), 
-                                   row.names = genParNames),genPar_digits)
-        genPar[is.na(genPar)] <- " "
+        
+        if(method=="ai"){
+          SEvG <- mClone$var["Treat",2]
+          SEvParc <- mClone$var["Parc",2]
+          SEvE <- mClone$var["Residual",2]
+          h2GSE <- deltamethod(~ x1/(x1+x2+x3),
+                               c(vG,vParc,vE),
+                               mClone$reml$invAI) 
+          
+          genPar <- round(data.frame(Estimates=c(vG,vParc,vE,vPhen,h2GSE,h2mc,c2Parc,accClone,CVg,CVe,Mean), 
+                                     SE=c(SEvG,SEvParc,SEvE,NA,h2GSE,matrix(NA,nrow=6,ncol=1)), 
+                                     row.names = genParNames),genPar_digits)
+        }else{
+          genPar <- round(data.frame(Estimates=c(vG,vParc,vE,vPhen,h2G,h2mc,c2Parc,accClone,CVg,CVe,Mean),
+                                     row.names = genParNames),genPar_digits)
+        }
+        
       }
       if(length(random)==1){
-        
-        vParc <- mProg$sigmaVector[2]
-        vRdm1 <- mProg$sigmaVector[3]
-        vE <- mProg$sigmaVector[4]
-        SEvParc <- sqrt(diag(mProg$sigmaSE))[2]
-        SEvRdm1 <- sqrt(diag(mProg$sigmaSE))[3]
-        SEvE <- sqrt(diag(mProg$sigmaSE))[4]
+        vRdm1 <- mClone$var["Random1",1]
         vPhen <- vG + vParc + vRdm1 + vE
         c2Parc <- vParc/vPhen
         c2Rdm1 <- vRdm1/vPhen
-        h2GSE <- sommer::vpredict(mProg, h2g ~ (V1) / (V1+V2+V3+V4))
-        CVe = (sqrt((3*vG+vE)/nArv+vParc))/Mean*100
+        h2G <- vG/vPhen
         
-        # genPar
-        genParNames <- c("vG","vParc","vRdm1","vE","vPhen","h2G","c2Parc","c2Rdm1","accClone","CVg%","CVe%","Mean")
-        genPar <- round(data.frame(Estimates=c(vG,vParc,vRdm1,vE,vPhen,h2GSE$Estimate,c2Rdm1,c2Parc,accClone,CVg,CVe,Mean), 
-                                   SE=c(SEvG,SEvParc,SEvRdm1,SEvE,NA,h2GSE$SE,matrix(NA,nrow=6,ncol=1)), 
-                                   row.names = genParNames),genPar_digits)
-        genPar[is.na(genPar)] <- " "  
+        genParNames <- c("vG","vParc","vRdm1","vE","vPhen","h2G","c2Parc","accClone","CVg%","CVe%","Mean")
+        
+        if(method=="ai"){
+          SEvG <- mClone$var["Treat",2]
+          SEvParc <- mClone$var["Parc",2]
+          SEvRdm1 <- mClone$var["Random1",2]
+          SEvE <- mClone$var["Residual",2]
+          h2GSE <- deltamethod(~ x1/(x1+x2+x3+x4),
+                               c(vG,vParc,vRdm1,vE),
+                               mClone$reml$invAI) 
+          
+          genPar <- round(data.frame(Estimates=c(vG,vParc,vRdm1,vE,vPhen,h2G,c2Rdm1,c2Parc,accClone,CVg,CVe,Mean), 
+                                     SE=c(SEvG,SEvParc,SEvRdm1,SEvE,NA,h2GSE,matrix(NA,nrow=6,ncol=1)), 
+                                     row.names = genParNames),genPar_digits)
+        }else{
+          genPar <- round(data.frame(Estimates=c(vG,vParc,vRdm1,vE,vPhen,h2G,c2Rdm1,c2Parc,accClone,CVg,CVe,Mean),
+                                     row.names = genParNames),genPar_digits)
+        }
         
       }
-      if(length(random)==1){
-        
-        vParc <- mProg$sigmaVector[2]
-        vRdm1 <- mProg$sigmaVector[3]
-        vRdm2 <- mProg$sigmaVector[4]
-        vE <- mProg$sigmaVector[5]
-        SEvParc <- sqrt(diag(mProg$sigmaSE))[2]
-        SEvRdm1 <- sqrt(diag(mProg$sigmaSE))[3]
-        SEvRdm2 <- sqrt(diag(mProg$sigmaSE))[4]
-        SEvE <- sqrt(diag(mProg$sigmaSE))[5]
+      if(length(random)==2){
+        vRdm1 <- mClone$var["Random1",1]
+        vRdm2 <- mClone$var["Random2",1]
         vPhen <- vG + vParc + vRdm1 + vRdm2 + vE
         c2Parc <- vParc/vPhen
         c2Rdm1 <- vRdm1/vPhen
-        c2Rdm1 <- vRdm2/vPhen
-        h2gSE <- sommer::vpredict(mProg, h2g ~ (V1) / (V1+V2+V3+V4+V4))
-        CVe = (sqrt((3*vG+vE)/nArv+vParc))/Mean*100
+        h2G <- vG/vPhen
         
-        # genPar
-        genParNames <- c("vG","vParc","vRdm1","vRdm2","vE","vPhen","h2G","c2Parc","c2Rdm1","c2Rdm2","accClone","CVg%","CVe%","Mean")
-        genPar <- round(data.frame(Estimates=c(vG,vParc,vRdm1,vRdm2,vE,vPhen,h2GSE$Estimate,c2Rdm1,c2Rdm2,c2Parc,accClone,CVg,CVe,Mean), 
-                                   SE=c(SEvG,SEvParc,SEvE,SEvRdm1,SEvRdm2,NA,h2GSE$SE,matrix(NA,nrow=7,ncol=1)), 
-                                   row.names = genParNames,genPar_digits))
-        genPar[is.na(genPar)] <- " "  
+        genParNames <- c("vG","vParc","vRdm1","vRdm2","vE","vPhen","h2G","c2Parc","accClone","CVg%","CVe%","Mean")
+        
+        if(method=="ai"){
+          SEvG <- mClone$var["Treat",2]
+          SEvParc <- mClone$var["Parc",2]
+          SEvRdm1 <- mClone$var["Random1",2]
+          SEvRdm2 <- mClone$var["Random2",2]
+          SEvE <- mClone$var["Residual",2]
+          h2GSE <- deltamethod(~ x1/(x1+x2+x3+x4+x5),
+                               c(vG,vParc,vRdm1,vRdm2,vE),
+                               mClone$reml$invAI) 
+          
+          genPar <- round(data.frame(Estimates=c(vG,vParc,vRdm1,vRdm2,vE,vPhen,h2G,c2Rdm1,c2Parc,accClone,CVg,CVe,Mean), 
+                                     SE=c(SEvG,SEvParc,SEvRdm1,SEvE,NA,h2GSE,matrix(NA,nrow=6,ncol=1)), 
+                                     row.names = genParNames),genPar_digits)
+        }else{
+          genPar <- round(data.frame(Estimates=c(vG,vParc,vRdm1,vRdm2,vE,vPhen,h2G,c2Rdm1,c2Parc,accClone,CVg,CVe,Mean),
+                                     row.names = genParNames),genPar_digits)
+        }
         
       }}
     
     if(plotType=="STP"){
-      nRep <- length(levels(factor(data$Rep)))
+      CVe = sqrt(3*vG+vE)/Mean*100
       
       if(length(random)==0){
-        vE <- mProg$sigmaVector[2]
-        SEvE <- sqrt(diag(mProg$sigmaSE))[2]
         vPhen <- vG + vE
-        h2GSE <- sommer::vpredict(mProg, h2a ~ (V1) / (V1+V2))
+        h2G <- vG/vPhen
         h2mc <- (vG) / (vG+(vE/nRep))
-        CVe = sqrt(3*vG+vE)/Mean*100
         
-        # genPar
         genParNames <- c("vG","vE","vPhen","h2G","h2mc","accClone","CVg%","CVe%","Mean")
-        genPar <- round(data.frame(Estimates=c(vG,vE,vPhen,h2GSE$Estimate,h2mc,accClone,CVg,CVe,Mean), 
-                                   SE=c(SEvG,SEvE,NA,h2GSE$SE,matrix(NA,nrow=5,ncol=1)), 
-                                   row.names = genParNames),genPar_digits)
-        genPar[is.na(genPar)] <- " "
+        
+        if(method=="ai"){
+          SEvG <- mClone$var["Treat",2]
+          SEvE <- mClone$var["Residual",2]
+          h2GSE <- deltamethod(~ x1/(x1+x2),
+                               c(vG,vE),
+                               mClone$reml$invAI) 
+          
+          genPar <- round(data.frame(Estimates=c(vG,vE,vPhen,h2G,h2mc,accClone,CVg,CVe,Mean), 
+                                     SE=c(SEvG,SEvE,NA,h2GSE,matrix(NA,nrow=5,ncol=1)), 
+                                     row.names = genParNames),genPar_digits)
+        }else{
+          genPar <- round(data.frame(Estimates=c(vG,vE,vPhen,h2G,h2mc,accClone,CVg,CVe,Mean),
+                                     row.names = genParNames),genPar_digits)
+        }
+        
       }
       if(length(random)==1){
-        vRdm1 <- mProg$sigmaVector[2]
-        vE <- mProg$sigmaVector[3]
+        vRdm1 <- mClone$var["Random1",1]
         vPhen <- vG + vRdm1 + vE
-        SEvRdm1 <- sqrt(diag(mProg$sigmaSE))[2]
-        SEvE <- sqrt(diag(mProg$sigmaSE))[3]
-        c2Rdm1 <- vRdm1/vPhen
-        h2GSE <- sommer::vpredict(mProg, h2a ~ (V1) / (V1+V2+V3))
-        CVe = sqrt(3*vG+vE)/Mean*100
+        h2G <- vG/vPhen
+        h2mc <- (vG) / (vG+(vE/nRep))
         
-        # genPar
-        genParNames <- c("vG","vRdm1","vE","vPhen","h2G","c2Rdm1","accClone","CVg%","CVe%","Mean")
-        genPar <- round(data.frame(Estimates=c(vG,vRdm1,vE,vPhen,h2GSE$Estimate,c2Rdm1,accClone,CVg,CVe,Mean), 
-                                   SE=c(SEvG,SEvRdm1,SEvE,NA,h2GSE$SE,matrix(NA,nrow=5,ncol=1)), 
-                                   row.names = genParNames),genPar_digits)
-        genPar[is.na(genPar)] <- " "
+        genParNames <- c("vG","vRdm1","vE","vPhen","h2G","h2mc","accClone","CVg%","CVe%","Mean")
+        
+        if(method=="ai"){
+          SEvG <- mClone$var["Treat",2]
+          SEvRdm1 <- mClone$var["Random1",2]
+          SEvE <- mClone$var["Residual",2]
+          h2GSE <- deltamethod(~ x1/(x1+x2+x3),
+                               c(vG,vRdm1,vE),
+                               mClone$reml$invAI) 
+          
+          genPar <- round(data.frame(Estimates=c(vG,vRdm1,vE,vPhen,h2G,h2mc,accClone,CVg,CVe,Mean), 
+                                     SE=c(SEvG,SEvRdm1,SEvE,NA,h2GSE,matrix(NA,nrow=5,ncol=1)), 
+                                     row.names = genParNames),genPar_digits)
+        }else{
+          genPar <- round(data.frame(Estimates=c(vG,vRdm1,vE,vPhen,h2G,h2mc,accClone,CVg,CVe,Mean),
+                                     row.names = genParNames),genPar_digits)
+        }
+        
       }  
       if(length(random)==2){
-        vRdm1 <- mProg$sigmaVector[2]
-        vRdm2 <- mProg$sigmaVector[3]
-        vE <- mProg$sigmaVector[4]
-        SEvRdm1 <- sqrt(diag(mProg$sigmaSE))[2]
-        SEvRdm2 <- sqrt(diag(mProg$sigmaSE))[3]
-        SEvE <- sqrt(diag(mProg$sigmaSE))[4]
+        vRdm1 <- mClone$var["Random1",1]
+        vRdm2 <- mClone$var["Random2",1]
         vPhen <- vG + vRdm1 + vRdm2 + vE
-        c2Rdm1 <- vRdm1/vPhen
-        c2Rdm2 <- vRdm2/vPhen
-        h2GSE <- sommer::vpredict(mProg, h2a ~ (V1) / (V1+V2+V3+V4))
-        CVe = sqrt(3*vG+vE)/Mean*100
+        h2G <- vG/vPhen
+        h2mc <- (vG) / (vG+(vE/nRep))
         
-        # genPar
-        genParNames <- c("vG","vRdm1","vRdm2","vE","vPhen","h2G","c2Rdm1","c2Rdm2","accClone","CVg%","CVe%","Mean")
-        genPar <- round(data.frame(Estimates=c(vG,vRdm1,vRdm2,vE,vPhen,h2GSE$Estimate,c2Rdm1,c2Rdm2,accClone,CVg,CVe,Mean), 
-                                   SE=c(SEvA,SEvRdm1,SEvRdm2,SEvE,NA,h2GSE$SE,matrix(NA,nrow=6,ncol=1)), 
-                                   row.names = genParNames),genPar_digits)
-        genPar[is.na(genPar)] <- " "
+        genParNames <- c("vG","vRdm1","vRdm2","vE","vPhen","h2G","h2mc","accClone","CVg%","CVe%","Mean")
+        
+        if(method=="ai"){
+          SEvG <- mClone$var["Treat",2]
+          SEvRdm1 <- mClone$var["Random1",2]
+          SEvRdm2 <- mClone$var["Random2",2]
+          SEvE <- mClone$var["Residual",2]
+          h2GSE <- deltamethod(~ x1/(x1+x2+x3+x4),
+                               c(vG,vRdm1,vE),
+                               mClone$reml$invAI) 
+          
+          genPar <- round(data.frame(Estimates=c(vG,vRdm1,vRdm2,vE,vPhen,h2G,h2mc,accClone,CVg,CVe,Mean), 
+                                     SE=c(SEvG,SEvRdm1,SEvRdm2,SEvE,NA,h2GSE,matrix(NA,nrow=5,ncol=1)), 
+                                     row.names = genParNames),genPar_digits)
+        }else{
+          genPar <- round(data.frame(Estimates=c(vG,vRdm1,vRdm2,vE,vPhen,h2G,h2mc,accClone,CVg,CVe,Mean),
+                                     row.names = genParNames),genPar_digits)
+        }
       }
-      
     }
+    genPar[is.na(genPar)] <- " "
     
-    # BLUP_Individual
-    
-    # Criando Cod caso nao existaa
-    if(!("Cod" %in% colnames(data))){
-      data$Cod = " "
-    }
+    # BLUP_dataframes ---------------------------------------------------------
     
     # Clone BLUP
-    cloneBLUP <- mProg$U$Treat$resp %>% data.frame() %>% setNames("BLUP") %>% rownames_to_column(.,"Clone") %>% 
-      mutate(Clone = str_replace_all(Clone, 'Treat', "")) %>% arrange(desc(BLUP))
+    cloneBLUP <- r2Clone %>% dplyr::select(Clone,g) %>% arrange(desc(g))
     
     # Provenance BLUP
     if(any(random=="Proc")){
-      procBLUP <- mAdd$U$Random1$resp %>% data.frame() %>% setNames("procBLUP") %>% rownames_to_column(.,"Provenance") %>% 
-        mutate(Provenance = str_replace_all(Provenance, 'Random1', "")) %>% arrange(desc(procBLUP))
+      procBLUP <- mAdd$ranef$Random1[[1]] %>% rownames_to_column(.,"Proc") %>% rename(BLUP=value) %>% arrange(desc(BLUP))
     }
     
-    # Create final output list
+    # final_output_list -------------------------------------------------------
     genParBLUP <- list()
     
-    # Exploratory analysis
-    genParBLUP$expAnalysis$cloneMeans <- treatMeans
+    # exploratory_analysis -------------------------------------------------
+    genParBLUP$expAnalysis$respMeans <- respMeans; genParBLUP$expAnalysis$cloneMeans <- treatMeans
     genParBLUP$expAnalysis$repMeans <- repMeans
     
-    # Model output
-    genParBLUP$Model$mmerModel <- mProg
-    genParBLUP$Model$mSig$fixedSig <- anova(mSig)
-    
+    # model_output_and_significance_tests -------------------------------------------------
+    genParBLUP$Model$remlMethod <- method; genParBLUP$Model$remlModel <- mClone; genParBLUP$Model$mSig$fixedSig <- anova(mSig)
     genParBLUP$Model$mSig$randomSig <- lmerTest::ranova(mSig, reduce.terms = F)
     
-    # Genetic parameters
-    genParBLUP$genPar <- genPar
-    
-    # Clone accuracy
-    genParBLUP$accuracyPEV$clonePEV <- dfacc
-    # BLUP
+    # genetic_parameters_accuracy_and_Blup -------------------------------------------------
+    genParBLUP$genPar <- genPar; genParBLUP$blupAccuracy$cloneAccuracy <- r2Clone;
     genParBLUP$BLUP$cloneBLUP <- cloneBLUP
     
     if(any(random=="Proc")){
       genParBLUP$BLUP$procBLUP <- procBLUP
+    }
+    if(any(fixed=="Proc")){
       genParBLUP$expAnalysis$procMeans <- procMeans
     }
   }
@@ -1239,20 +1235,19 @@ genBLUP <- function(data, varResp, treatment = c("Prog","Clone"), plotType = c("
     dir_0 <- getwd()
     
     if(!is.null(directory)){
-      if(dir.exists(file.path(getwd(), directory))==FALSE){  ## Criar diret?rio, caso ele n?o exista e como diret?rio de trabalho
+      if(dir.exists(file.path(getwd(), directory))==FALSE){
         dir.create(directory)
         setwd(directory)
       }else{setwd(directory)}
     }
     
-    genParFile <- paste0(varResp,"_genPar",".txt") # o objeto var foi criado anteriormente
+    genParFile <- paste0(varResp,"_genPar",".txt")
     
     if (file.exists(genParFile)){
       file.remove(genParFile)
     }
     
     # Building string model to output
-    
     if(is.null(random)){
       if(plotType=="LP"){
         strMod <- paste0(varResp," = ","f",fixed," + rGen + rParc")}
@@ -1303,21 +1298,21 @@ genBLUP <- function(data, varResp, treatment = c("Prog","Clone"), plotType = c("
     cat("---------------------------------------------- |BLUP|  ---------------------------------------\n\n")
     cat("\n")
     if(any(random=="Proc")){
-      cat("------------------------------------------ Provenance BLUP -----------------------------------\n\n")
-      print(dfblupProc)
+      cat("------------------------------------------ Provenance BLUP --------------------------------------\n\n")
+      print(procBLUP)
       cat("\n")
     }
-    cat("------------------------------------------- Treatment BLUP -----------------------------------\n\n")
+    cat("------------------------------------------ Treatment BLUP ------------------------------------\n\n")
     cat("\n")
     if(treatment=="Clone"){
       print(cloneBLUP)}
     if(treatment=="Prog"){
       print(progBLUP)
       cat("\n")
-      cat("------------------------------------------ Individual BLUP -----------------------------------\n\n")
-      print(blupOrdered)
+      cat("---------------------------------------- Individual BLUP -----------------------------------\n\n")
+      print(indBLUP)
       cat("\n")
-      cat("---------------------------------- Overlapping Generations Selection -----------------------------\n\n")
+      cat("--------------------------------- Overlapping Generations Selection -----------------------------\n\n")
       print(overBLUP)
     }
     
@@ -1337,11 +1332,13 @@ genBLUP <- function(data, varResp, treatment = c("Prog","Clone"), plotType = c("
     cat("                                             |Accuracy| \n"                                        )
     cat("----------------------------------------------------------------------------------------------\n\n")
     cat("----------------------------------------- Treatment accuracy ---------------------------------\n\n")
-    print(dfacc)
+    if(treatment=="Clone"){
+      print(r2Clone)}
     if(treatment=="Prog"){
+      print(r2Prog)
       cat("\n")
       cat("----------------------------------------- Individual accuracy --------------------------------\n\n")
-      print(dfaccInd)
+      print(r2Ind_df)
     }
     
     sink()
@@ -1369,7 +1366,7 @@ genBLUP <- function(data, varResp, treatment = c("Prog","Clone"), plotType = c("
     
     # Otimized BLUP #
     
-    if(otimizeSelection==TRUE){
+    if(treatment=="Prog" & otimizeSelection==TRUE){
       
       blupOtimized <- paste0(varResp,"_otimizedBLUP",".txt")
       
