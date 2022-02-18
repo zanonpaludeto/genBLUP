@@ -4,7 +4,7 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
   
   # loading packages --------------------------------------------------------
   
-  pacman::p_load(future,sommer,stringr,tidyverse,ggroups,dplyr)
+  pacman::p_load(future,lme4,stringr,tidyverse,ggroups,dplyr)
   
   # stops and warnings ------------------------------------------------------
   
