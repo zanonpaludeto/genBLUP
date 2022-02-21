@@ -165,7 +165,6 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
     #   }}
   }
   
-  
   # statistical modelling ---------------------------------------------------
   
   # linear_plot -------------------------------------------------------------
