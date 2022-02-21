@@ -1,5 +1,5 @@
 genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = NULL, method = "ai", 
-                    genPar_digits, otimizeSelection = FALSE, maxIndProgeny = NULL, 
+                    genPar_digits, optimizeSelection = FALSE, maxIndProgeny = NULL, 
                     maxProgenyBlock = NULL, excludeControl = NULL, excludeCod = NULL, directory = NULL){
   
   # loading packages --------------------------------------------------------
@@ -20,9 +20,18 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
     stop("ERROR: varResp non-existent, please check your data")
   }
   
-  if(treatment=="Clone"&otimizeSelection==T){
-    stop("ERROR: You can't otimize selection in a clonal analysis")
-  }  
+  if(!is.numeric(data[,varResp])){
+    stop("ERROR: varResp is not numeric, please check your data")
+  }
+  
+  if(treatment=="Clone"&optimizeSelection==T){
+    stop("ERROR: You can't optimize individual selection in a clonal analysis")
+  }
+  
+  if(treatment=="Prog"&optimizeSelection==T&!is.numeric(maxIndProgeny)|!is.numeric(maxIndBlock)){
+    stop("ERROR: If you want to optimize selection, please choose numeric parameters for maxIndProgeny and maxIndBlock")
+  }
+  
   if(method=="ai"||is.null(method)){
     cat("AI-REML algorithm was selected\n")
   }else{
@@ -946,9 +955,9 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
       indBLUP <- indBLUP %>% left_join(.,procBLUP[,1:2],by="Proc") %>% mutate(a=a+BLUP) %>% dplyr::select(.,-last_col())
     }
     
-    # otimize_selection -------------------------------------------------------
+    # optimize_selection -------------------------------------------------------
     
-    if(otimizeSelection==TRUE){
+    if(optimizeSelection==TRUE){
       
       rankBLUP <- indBLUP
       
@@ -974,7 +983,7 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
       }
       dfNe[is.na(dfNe)] <- 0
       
-      otimizedBLUP <- rankBLUP %>% mutate(Np = cumsum(!duplicated(rankBLUP$Progeny))) %>% mutate(seq = seq(1:nrow(rankBLUP))) %>% mutate(Kf = seq/Np) %>% 
+      optimizedBLUP <- rankBLUP %>% mutate(Np = cumsum(!duplicated(rankBLUP$Progeny))) %>% mutate(seq = seq(1:nrow(rankBLUP))) %>% mutate(Kf = seq/Np) %>% 
         mutate(varkf = dfNe) %>% mutate(Ne = (4*Np*Kf)/(3+Kf+(varkf/Kf))) %>% dplyr::select(.,-c("Np","seq","Kf","varkf")) %>% 
         relocate(Cod, .after = last_col())
     }
@@ -1002,8 +1011,8 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
       genParBLUP$expAnalysis$procMeans <- procMeans
     }
     
-    if(otimizeSelection==TRUE){
-      genParBLUP$BLUP$otimizedBLUP <- otimizedBLUP
+    if(optimizeSelection==TRUE){
+      genParBLUP$BLUP$optimizedBLUP <- optimizedBLUP
     }
   }
   if(treatment=="Clone"){
@@ -1361,20 +1370,20 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
     
     sink()
     
-    # Otimized BLUP #
+    # optimized BLUP #
     
-    if(treatment=="Prog" & otimizeSelection==TRUE){
+    if(treatment=="Prog" & optimizeSelection==TRUE){
       
-      blupOtimized <- paste0(varResp,"_otimizedBLUP",".txt")
+      blupoptimized <- paste0(varResp,"_optimizedBLUP",".txt")
       
-      if(file.exists(blupOtimized)){
-        file.remove(blupOtimized)
+      if(file.exists(blupoptimized)){
+        file.remove(blupoptimized)
       }
       
-      sink(blupOtimized, append=TRUE, type = "output")
+      sink(blupoptimized, append=TRUE, type = "output")
       
       cat("\n----------------------------------------------------------------------------------------------\n")
-      cat("                                           |Otimized BLUP| \n"                                     )
+      cat("                                           |optimized BLUP| \n"                                     )
       cat("----------------------------------------------------------------------------------------------\n\n")
       cat("--------------------------------------------- Arguments --------------------------------------\n\n")
       cat("Max. Individuals per Progeny:\n\n")
@@ -1385,7 +1394,7 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
       print(excludeControl)
       cat("----------------------------------------------------------------------------------------------\n\n")
       cat("---------------------------------------- Individual Selection --------------------------------\n\n")
-      print(otimizedBLUP)
+      print(optimizedBLUP)
       
       sink()
       
