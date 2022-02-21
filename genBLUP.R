@@ -20,16 +20,13 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
     stop("ERROR: varResp non-existent, please check your data")
   }
   
-  if(is.null(directory)){
-    warning("Directory is 'NULL', so no txt outputs were created")
-  }
   if(treatment=="Clone"&otimizeSelection==T){
     stop("ERROR: You can't otimize selection in a clonal analysis")
   }  
   if(method=="ai"||is.null(method)){
     cat("AI-REML algorithm was selected\n")
   }else{
-    cat("EM-REML algorith was selected\n")
+    cat("EM-REML algorithm was selected\n")
   }
   
   # exploratory analysis ----------------------------------------------------
@@ -1397,6 +1394,13 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
     setwd(dir_0)
     
   }
+  
+  if(is.null(directory)){
+    cat("Directory argument is 'NULL', so no txt outputs were created\n")
+  }else{
+    cat("Outputs were created at", paste0(getwd(),"/",directory))
+  }
+  
   class(genParBLUP) <- "genList"
   invisible(genParBLUP)
 }
