@@ -28,8 +28,8 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
     stop("ERROR: You can't optimize individual selection in a clonal analysis")
   }
   
-  if(treatment=="Prog"&optimizeSelection==T&!is.numeric(maxIndProgeny)|!is.numeric(maxIndBlock)){
-    stop("ERROR: If you want to optimize selection, please choose numeric parameters for maxIndProgeny and maxIndBlock")
+  if(treatment=="Prog"&optimizeSelection==T&!is.numeric(maxIndProgeny)|!is.numeric(maxProgenyBlock)){
+    stop("ERROR: If you want to optimize selection, please choose numeric parameters for maxIndProgeny and maxProgenyBlock")
   }
   
   if(method=="ai"||is.null(method)){
