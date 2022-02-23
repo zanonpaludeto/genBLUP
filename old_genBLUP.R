@@ -856,7 +856,7 @@ genBLUP <- function(data, varResp, treatment = c("Prog","Clone"), plotType = c("
     indBLUP <- mAdd$U$`u:Ind`$resp %>% data.frame %>% setNames("BLUP") %>% rownames_to_column(.,"Ind")
     
     # Phenotypic and cod data
-    phenoCodData <- data %>% select(Ind,Cod,resp) %>% rename(.,f = resp)
+    phenoCodData <- data %>% dplyr::select(Ind,Cod,resp) %>% rename(.,f = resp)
     
     if(any(random=="Proc")||any(fixed=="Proc")){
       phenoCodData <- setNames(subset(data, select = c("Ind","Cod","Proc","resp")),c("Ind","Cod","Proc","f"))
@@ -891,9 +891,9 @@ genBLUP <- function(data, varResp, treatment = c("Prog","Clone"), plotType = c("
     
     # Organizing overlapping generation BLUP
     if(dominance){
-      overBLUP <- dfblupInd %>% select (-c(d,f,g)) %>% rbind(.,overBLUP) %>% arrange(desc(BLUP))
+      overBLUP <- dfblupInd %>% dplyr::select (-c(d,f,g)) %>% rbind(.,overBLUP) %>% arrange(desc(BLUP))
     }else{
-      overBLUP <- dfblupInd %>% select (-f) %>% rbind(.,overBLUP) %>% arrange(desc(BLUP))
+      overBLUP <- dfblupInd %>% dplyr::select (-f) %>% rbind(.,overBLUP) %>% arrange(desc(BLUP))
     }
     
     # BLUP + mean and arrange
