@@ -195,8 +195,11 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
   if(treatment=="Clone"&!is.null(random)){
     ranef <- as.formula(paste0("~", treatment, "+", paste(random, collapse=" + ")))
   }
-  if(is.null(random)){
+  if(treatment=="Clone"&is.null(random)){
     ranef <- as.formula(paste0("~", treatment))
+  }
+  if(treatment=="Prog"&is.null(random)){
+    ranef <- NULL
   }
   
   #suppressing messages and warnings
