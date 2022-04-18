@@ -1,6 +1,6 @@
 genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = NULL, method = "ai", 
-                    removeControl = NULL, genPar_digits, optimizeSelection = FALSE, maxIndProgeny = NULL, 
-                    maxProgenyBlock = NULL, excludeControl = NULL, excludeCod = NULL, directory = NULL){
+                    excludeControl = NULL, genPar_digits, optimizeSelection = FALSE, maxIndProgeny = NULL, 
+                    maxProgenyBlock = NULL, excludeCod = NULL, directory = NULL){
   
   # loading packages --------------------------------------------------------
   
@@ -41,15 +41,15 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
     cat("EM-REML algorithm was selected\n")
   }
   
-  if(!any(data[,treatment]%in%removeControl)){
-    stop(paste0("ERROR: The specified controls in removeControl argument are not in the ",treatment," column of your dataset"))
+  if(!any(data[,treatment]%in%excludeControl)){
+    stop(paste0("ERROR: The specified controls in excludeControl argument are not in the ",treatment," column of your dataset"))
   }
   
   # exploratory analysis ----------------------------------------------------
   
-  if(!is.null(removeControl)){
-    data <- data %>% filter(!.[,treatment]%in%removeControl)
-    cat(paste(c("Controls:",removeControl, "where removed using removeControl argument\n"))) 
+  if(!is.null(excludeControl)){
+    data <- data %>% filter(!.[,treatment]%in%excludeControl)
+    cat(paste(c("Controls:",excludeControl, "where removed using excludeControl argument\n"))) 
   }
   
   data <- data %>% arrange(get(treatment))
@@ -168,13 +168,13 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
         cat("Grandparents were found and considered in the pedigree\n")
         
         dfGD <- data[c("nProg","GD")] %>% group_by(nProg) %>% distinct() %>% arrange(nProg)
-        if(nrow(pedGD)>nrow(nProg)){
+        if(nrow(dfGD)>nrow(nProg)){
           stop("ERROR: There is progenies with more than one grandparent assisgned in the dataset, please check your data")
         }
         nGD <- data.frame(GD = unique(na.omit(dfGD$GD)), nGD = seq(1,uniqueGD))
         pedGD <- data.frame(as.numeric(levels(factor(nGD$nGD))),0,0) %>% setNames(c("idNum","sire","dam"))
         
-        ped <- dfGD %>% left_join(.,nGD, by="GD") %>% select(-GD) %>% mutate(sire=0, .after = nProg) %>% 
+        ped <- dfGD %>% left_join(.,nGD, by="GD") %>% dplyr::select(-GD) %>% mutate(sire=0, .after = nProg) %>% 
           setNames(c("idNum","sire","dam")) %>% bind_rows(pedGD,.,ped)
       }
       
@@ -568,9 +568,6 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
       
       rankBLUP <- indBLUP
       
-      if(!is.null(excludeControl)){
-        rankBLUP <- indBLUP[!indBLUP$Progeny %in% excludeControl,]
-      }
       if(!is.null(excludeCod)){
         rankBLUP <- indBLUP[!indBLUP$Cod %in% excludeCod,]
       }
@@ -578,7 +575,7 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
       # Filtering using the maximum number of individuals per progeny, then the max number of progenies addmited in the same block
       rankBLUP <- rankBLUP %>% mutate(Np_csum = ave(Progeny==Progeny, Progeny, FUN=cumsum)) %>% filter(Np_csum <= maxIndProgeny) %>% 
         mutate(RP = paste0(Block,Progeny)) %>% mutate(RP_csum = ave(RP==RP,RP, FUN=cumsum)) %>% 
-        filter(RP_csum <= maxProgenyBlock) %>% select(.,-c("Np_csum","RP","RP_csum"))
+        filter(RP_csum <= maxProgenyBlock) %>% dplyr::select(.,-c("Np_csum","RP","RP_csum"))
       
       # recalculating effective population size and genetic gain
       
@@ -906,6 +903,8 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
     cat("Model: ")
     cat(strMod)
     cat("\n")
+    cat("Controls Excluded:\n\n")
+    print(excludeControl)
     cat("----------------------------------------------------------------------------------------------\n\n")
     cat("---------------------------------------- Exploratory Analysis --------------------------------\n\n")
     print(respMeans)
