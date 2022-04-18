@@ -138,6 +138,7 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
     
     if(any(names(data)=="GD")){
       uniqueGD <- length(na.omit(unique(data$GD)))
+      nGD <- data.frame(GD = unique(na.omit(data$GD)), nGD = seq(1,uniqueGD))
       nInd <- seq(uniqueGD+uniqueProg+1,nrow(data)+uniqueProg+uniqueGD)
       nProg <- data.frame(Prog = sort(unique(data$Prog)), nProg = as.numeric(seq(uniqueGD+1,uniqueProg+uniqueGD)))
       
@@ -171,7 +172,6 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
         if(nrow(dfGD)>nrow(nProg)){
           stop("ERROR: There is progenies with more than one grandparent assisgned in the dataset, please check your data")
         }
-        nGD <- data.frame(GD = unique(na.omit(dfGD$GD)), nGD = seq(1,uniqueGD))
         pedGD <- data.frame(as.numeric(levels(factor(nGD$nGD))),0,0) %>% setNames(c("idNum","sire","dam"))
         
         ped <- dfGD %>% left_join(.,nGD, by="GD") %>% dplyr::select(-GD) %>% mutate(sire=0, .after = nProg) %>% 
