@@ -41,7 +41,7 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
     cat("EM-REML algorithm was selected\n")
   }
   
-  if(!any(data[,treatment]%in%excludeControl)){
+  if(!is.null(excludeControl)&!any(data[,treatment]%in%excludeControl)){
     stop(paste0("ERROR: The specified controls in excludeControl argument are not in the ",treatment," column of your dataset"))
   }
   
