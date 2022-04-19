@@ -310,12 +310,12 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
     
     if(any(names(data)=="GD")){
       r2GD <- mAdd$ranef$genetic[[1]] %>% 
-        mutate(r2=1-(s.e./2)^2/(diag(diag(length(mAdd$ranef$genetic[[1]][,1])))*as.data.frame(mAdd$var)["Residual",1])) %>% 
+        mutate(r2=1-(s.e.)^2/(diag(diag(length(mAdd$ranef$genetic[[1]][,1])))*as.data.frame(mAdd$var)["Residual",1])) %>% 
         filter(row_number() <= uniqueGD) %>% add_column(GD = nGD$GD, .before = "value") %>% mutate(value=value) %>% mutate(s.e.=s.e.) %>% 
         rename(a = value)
       
       r2Prog <- mAdd$ranef$genetic[[1]] %>% 
-        mutate(r2=1-(s.e./2)^2/(diag(diag(length(mAdd$ranef$genetic[[1]][,1])))*as.data.frame(mAdd$var)["Residual",1])) %>% 
+        mutate(r2=1-(s.e.)^2/(diag(diag(length(mAdd$ranef$genetic[[1]][,1])))*as.data.frame(mAdd$var)["Residual",1])) %>% 
         filter(between(row_number(), uniqueGD+1,uniqueProg+uniqueGD)) %>% add_column(Prog = nProg$Prog, .before = "value") %>% mutate(value=value) %>% mutate(s.e.=s.e.) %>% 
         rename(a = value)
       
@@ -325,7 +325,7 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
       
     }else{
       r2Prog <- mAdd$ranef$genetic[[1]] %>% 
-        mutate(r2=1-(s.e./2)^2/(diag(diag(length(mAdd$ranef$genetic[[1]][,1])))*as.data.frame(mAdd$var)["Residual",1])) %>% 
+        mutate(r2=1-(s.e.)^2/(diag(diag(length(mAdd$ranef$genetic[[1]][,1])))*as.data.frame(mAdd$var)["Residual",1])) %>% 
         filter(row_number() < nrow(nProg)+1) %>% add_column(Prog = nProg$Prog, .before = "value") %>% mutate(value=value) %>% mutate(s.e.=s.e.) %>% 
         rename(a = value)
       
