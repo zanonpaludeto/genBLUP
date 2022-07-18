@@ -202,12 +202,12 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
     # dominance matrix --------------------------------------------------------
     
     # if(dominance==TRUE){
-    #   
+    # 
     #   A <- buildA(ped)
     #   D <- ggroups::buildD(ped,A)
-    #   if(any(duplicated(rownames(D))==TRUE)){
-    #     stop("ERROR: There is duplicated individuals, please check your data")
-    #   }}
+    #     if(any(duplicated(rownames(D))==TRUE)){
+    #       stop("ERROR: There is duplicated individuals, please check your data")
+    #     }}
   }
   
   # statistical modelling ---------------------------------------------------
@@ -279,11 +279,19 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
                                   data = data,method = method,
                                   progsf90.options = 'EM-REML 10')
       })
-    #if(dominance==TRUE){
-    #mDom <- sommer::mmer(resp ~ Fixed1,
-    #random= ~ vs(idNum,Gu=D) + Parc,
-    #rcov=~units,
-    #data=df %>% mutate(idNum = as.factor(idNum)), verbose = F)
+    # if(dominance==TRUE){
+    #   data <- data %>% mutate(idNumD = idNum)
+    #   Dfiltered <- D[-c(1:uniqueProg), -c(1:uniqueProg)]
+    # Z <- as(sparse.model.matrix(~ 0 + idNumD, data %>%
+    #                               mutate(idNumD = as.factor(idNumD))), "indMatrix")
+    # sparseDfiltered <- as(Dfiltered, "dgCMatrix")
+    # madd_dom_2_dap <- breedR::remlf90(fixef,
+    #                             random = ranef,
+    #                             genetic = list(model = "add_animal",
+    #                                            pedigree = ped,id = "idNum"),
+    #                             generic = list(dominance = list(Z, sparseDfiltered)),
+    #                             data = data,method = method,
+    #                             progsf90.options = 'EM-REML 10')
     # }
     
     if(is.null(random)){
