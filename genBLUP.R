@@ -1,5 +1,5 @@
 genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = NULL, method = "ai", 
-                    excludeControl = NULL, genPar_digits, optimizeSelection = FALSE, maxIndProgeny = NULL, 
+                    excludeControl = NULL, genPar_digits, codPerc = NULL, optimizeSelection = FALSE, maxIndProgeny = NULL, 
                     maxProgenyBlock = NULL, excludeCod = NULL, directory = NULL){
   
   # loading packages --------------------------------------------------------
@@ -47,9 +47,19 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
   
   # exploratory analysis ----------------------------------------------------
   
+  # preparing data
+  
   if(!is.null(excludeControl)){
     data <- data %>% filter(!.[,treatment]%in%excludeControl)
     cat(paste(c("Controls:",excludeControl, "where removed using excludeControl argument\n"))) 
+  }
+  
+  # Creating Cod if it doesn't exist
+  if(!("Cod" %in% colnames(data))){
+    data$Cod = " "
+  }
+  if(all(c("Cod1","Cod2")%in%colnames(data))){
+    data$Cod <- paste0(data$Cod1,";",data$Cod2)
   }
   
   data <- data %>% arrange(get(treatment))
@@ -79,6 +89,23 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
   }
   treatMeans <- groupMeans(data,treatment)
   repMeans <- groupMeans(data,"Rep")
+  
+  if(!is.null(codPerc)){
+    countTreat <- data %>% count(get(treatment)) %>% setNames(c(treatment,"nObs"))
+    suppressMessages(codData <- separate_rows(data,Cod) %>% count(!!as.name(treatment),Cod) %>% filter(Cod!=".") %>% pivot_wider(., names_from = Cod,values_from = n) %>% 
+                       left_join(countTreat,.) %>% relocate(nObs, .after = last_col()))
+    
+    for(i in codPerc){
+      if(i %in% names(codData)){
+        percCod <- setNames(data.frame(codData[,i]/codData$nObs*100),paste0(i,"%"))
+        codData <- cbind(codData,percCod)
+      }
+    }
+    
+    treatPerc <- codData %>% dplyr::select(as.name(treatment),(which(names(.) == "nObs") + 1):last_col())
+    treatMeans <- cbind(treatMeans,treatPerc[,-1])
+    treatMeans[is.na(treatMeans)] <- 0
+  }
   
   if(any(random=="Proc")||any(fixed=="Proc")){
     procMeans <- groupMeans(data,"Proc")
@@ -115,13 +142,6 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
   }
   
   # pedigree matrix ---------------------------------------------------------
-  
-  # preparing data
-  
-  # Creating Cod if it doesn't exist
-  if(!("Cod" %in% colnames(data))){
-    data$Cod = " "
-  }
   
   #creating Ind column
   if(plotType=="LP"){  
@@ -279,20 +299,6 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
                                   data = data,method = method,
                                   progsf90.options = 'EM-REML 10')
       })
-    # if(dominance==TRUE){
-    #   data <- data %>% mutate(idNumD = idNum)
-    #   Dfiltered <- D[-c(1:uniqueProg), -c(1:uniqueProg)]
-    # Z <- as(sparse.model.matrix(~ 0 + idNumD, data %>%
-    #                               mutate(idNumD = as.factor(idNumD))), "indMatrix")
-    # sparseDfiltered <- as(Dfiltered, "dgCMatrix")
-    # madd_dom_2_dap <- breedR::remlf90(fixef,
-    #                             random = ranef,
-    #                             genetic = list(model = "add_animal",
-    #                                            pedigree = ped,id = "idNum"),
-    #                             generic = list(dominance = list(Z, sparseDfiltered)),
-    #                             data = data,method = method,
-    #                             progsf90.options = 'EM-REML 10')
-    # }
     
     if(is.null(random)){
       lmerModel <- as.formula(paste0("get(varResp) ~ ",paste(fixed, collapse=" + ")," + ", 
@@ -533,6 +539,15 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
       {if (plotType=="LP") separate(.,Ind,c("Block","Progeny","Plot","Tree"),  sep="\\.") else separate(.,Ind,c("Block","Progeny","Tree"), sep="\\.")} %>% 
       mutate("u+a" = Mean+a) %>% drop_na() %>% arrange(desc(a))
     
+    # Provenance BLUP
+    if(any(random=="Proc")){
+      procBLUP <- mAdd$ranef$Proc[[1]] %>% rownames_to_column(.,"Proc") %>% rename(BLUP=value) %>% arrange(desc(BLUP))
+      indBLUP <- indBLUP %>% left_join(.,procBLUP[,1:2],by="Proc") %>% mutate(a=a+BLUP) %>% mutate("u+a"=Mean+a) %>% dplyr::select(.,-last_col()) %>% 
+        arrange(desc(a))
+      progBLUP <- progBLUP %>% left_join(.,data[,c("Prog","Proc")], by= c("Progeny"="Prog")) %>% unique() %>% left_join(.,procBLUP[,1:2], by="Proc") %>% 
+        mutate(a=a+BLUP) %>% dplyr::select(-c(Proc,BLUP)) %>% arrange(desc(a))
+    }
+    
     # Absolute and percentual genetic gain
     gain <- matrix(nrow=nrow(indBLUP), ncol=1)
     for(i in 1:nrow(indBLUP)){
@@ -563,12 +578,6 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
     overBLUP <- progBLUP %>% {if (plotType=="LP") mutate(.,Block = 0, Plot = 0, Tree = 0, Cod = "Parent") %>% 
         relocate(Block,Progeny,Plot,Tree,a,Cod) else mutate(.,Block = 0, Tree = 0, Cod = "Parent") %>% relocate(Block,Progeny,Tree,a,Cod)} %>% 
       rbind(.,indBLUP[,colnames(.)]) %>% arrange(desc(a))
-    
-    # Provenance BLUP
-    if(any(random=="Proc")){
-      procBLUP <- mAdd$ranef$Proc[[1]] %>% rownames_to_column(.,"Proc") %>% rename(BLUP=value) %>% arrange(desc(BLUP))
-      indBLUP <- indBLUP %>% left_join(.,procBLUP[,1:2],by="Proc") %>% mutate(a=a+BLUP) %>% dplyr::select(.,-last_col())
-    }
     
     # optimize_selection -------------------------------------------------------
     
@@ -867,7 +876,7 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
       }else{setwd(directory)}
     }
     
-    genParFile <- paste0(varResp,"_genPar",".txt")
+    genParFile <- paste0(directory,"_",varResp,"_genPar",".txt")
     
     if (file.exists(genParFile)){
       file.remove(genParFile)
@@ -957,7 +966,7 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
     
     # Accuracy output #
     
-    accFile <- paste0(varResp,"_acc",".txt")
+    accFile <- paste0(directory,"_",varResp,"_acc",".txt")
     
     if (file.exists(accFile)){
       file.remove(accFile)
@@ -987,7 +996,7 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
     
     # Significance output #
     
-    sigFile <- paste0(varResp,"_sig",".txt")
+    sigFile <- paste0(directory,"_",varResp,"_sig",".txt")
     
     if (file.exists(sigFile)){
       file.remove(sigFile)
@@ -1010,7 +1019,7 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
     
     if(treatment=="Prog" & optimizeSelection==TRUE){
       
-      blupoptimized <- paste0(varResp,"_optimizedBLUP",".txt")
+      blupoptimized <- paste0(directory,"_",varResp,"_optimizedBLUP",".txt")
       
       if(file.exists(blupoptimized)){
         file.remove(blupoptimized)
