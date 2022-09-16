@@ -149,69 +149,77 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
   }else{data$Ind <- paste0(data$Rep,sep = ".",data[,names(data) %in% treatment],sep=".",data$Arv)  
   }
   
-  data <- data %>% mutate(idNum=1)
-  
   if(treatment=="Prog"){
     
     #counting nProg (dams)
     uniqueProg <- length(na.omit(unique(data$Prog)))
     
-    if(any(names(data)=="GD")){
+    if("GD"%in%names(data)&"sire"%in%names(data)){
+      
+      cat("Grandparents and sires were found and considered in the pedigree\n")
+      
       uniqueGD <- length(na.omit(unique(data$GD)))
       nGD <- data.frame(GD = unique(na.omit(data$GD)), nGD = seq(1,uniqueGD))
-      nInd <- seq(uniqueGD+uniqueProg+1,nrow(data)+uniqueProg+uniqueGD)
-      nProg <- data.frame(Prog = sort(unique(data$Prog)), nProg = as.numeric(seq(uniqueGD+1,uniqueProg+uniqueGD)))
+      uniqueSire <- length(na.omit(unique(data$sire)))
+      nSire <- data.frame(sire = unique(na.omit(data$sire)), nSire = seq(uniqueGD+1,uniqueGD+uniqueSire))
       
-    }else{
-      nInd <- seq(uniqueProg+1,nrow(data)+uniqueProg)
-      nProg <- data.frame(Prog = sort(unique(data$Prog)), nProg = as.numeric(seq(1,length(unique(data$Prog)))))
+      ancPed <- data.frame(idNum=c(nGD$nGD,nSire$nSire),sire=0,dam=0)
+      
+      nProg <- data.frame(Prog = sort(unique(data$Prog)), nProg = as.numeric(seq(uniqueGD+uniqueSire+1,uniqueProg+uniqueGD+uniqueSire)))
+    }
+    if(!"GD"%in%names(data)&"sire"%in%names(data)){
+      
+      cat("Sires were found and considered in the pedigree\n")
+      
+      uniqueSire <- length(na.omit(unique(data$sire)))
+      nSire <- data.frame(sire = unique(na.omit(data$sire)), nSire = seq(1,uniqueSire))
+      
+      ancPed <- data.frame(idNum=nSire$nSire,sire=0,dam=0)
+      
+      nProg <- data.frame(Prog = sort(unique(data$Prog)), nProg = as.numeric(seq(uniqueSire+1,uniqueProg+uniqueSire)))
+    }
+    if("GD"%in%names(data)&!"sire"%in%names(data)){
+      
+      cat("Grandparents were found and considered in the pedigree\n")
+      
+      uniqueGD <- length(na.omit(unique(data$GD)))
+      nGD <- data.frame(GD = unique(na.omit(data$GD)), nGD = seq(1,uniqueGD))
+      
+      ancPed <- data.frame(idNum=nGD$nGD,sire=0,dam=0)
+      
+      nProg <- data.frame(Prog = sort(unique(data$Prog)), nProg = as.numeric(seq(uniqueGD+1,uniqueProg+uniqueGD)))
+    }
+    if(!"GD"%in%names(data)&!"sire"%in%names(data)){
+      nProg <- data.frame(Prog = sort(unique(data$Prog)), nProg = as.numeric(seq(1,uniqueProg)))
     }
     
+    nInd <- seq(1001,1000+nrow(data))
     data <- data %>% mutate(idNum=as.numeric(nInd))
     data <- dplyr::left_join(data,nProg,by="Prog")
     
     breedR.createPed <- function(pedData){
       
-      ped <- data.frame(pedData,sire=0) %>% setNames(c("idNum","dam","sire")) %>% relocate(dam, .after = sire)
-      
-      if(any(duplicated(ped[,1])==TRUE)){
-        stop("ERROR: There is duplicated individuals, please check your data")
-      }
-      
-      #pedigree with no ancestor information
-      if(!"GD"%in%names(data)){
-        ped <- data.frame(as.numeric(levels(factor(ped$dam))),0,0) %>% setNames(c("idNum","sire","dam")) %>% rbind(.,ped)
+      if("sire"%in%names(data)){
+        data <- dplyr::left_join(data,nSire,by="sire")
+        ped <- data.frame(pedData,sire=data$nSire) %>% setNames(c("idNum","dam","sire")) %>% relocate(dam, .after = sire)
+      }else{
+        ped <- data.frame(pedData,sire=0) %>% setNames(c("idNum","dam","sire")) %>% relocate(dam, .after = sire)
       }
       
       #pedigree with grand dam information
-      if(any(names(data)=="GD"&any(names(data)!="GS"))){
-        
-        cat("Grandparents were found and considered in the pedigree\n")
+      if(any(names(data)=="GD")){
         
         dfGD <- data[c("nProg","GD")] %>% group_by(nProg) %>% distinct() %>% arrange(nProg)
         if(nrow(dfGD)>nrow(nProg)){
           stop("ERROR: There is progenies with more than one grandparent assisgned in the dataset, please check your data")
         }
-        pedGD <- data.frame(as.numeric(levels(factor(nGD$nGD))),0,0) %>% setNames(c("idNum","sire","dam"))
-        
         ped <- dfGD %>% left_join(.,nGD, by="GD") %>% dplyr::select(-GD) %>% mutate(sire=0, .after = nProg) %>% 
-          setNames(c("idNum","sire","dam")) %>% bind_rows(pedGD,.,ped)
+          setNames(c("idNum","sire","dam")) %>% bind_rows(ancPed,.,ped)
       }
       
-      #pedigree with grand dam and grand sire information
-      # if(any(names(data)=="GS")&any(names(data)=="GD")){
-      #   
-      #   cat("Grandparents were found and considered in the pedigree\n")
-      #   
-      #   pedGD <- data[c("nProg","GD","GS")] %>% group_by(nProg) %>% distinct() %>% arrange(nProg)
-      #   if(nrow(pedGD)>nrow(nProg)){
-      #     stop("ERROR: There is progenies with more than one grandparent assisgned in the dataset, please check your data")
-      #   }
-      #   nGD <- data.frame(GD = unique(na.omit(pedGD$GD)), nGD = 1000:(length(unique(na.omit(pedGD$GD)))+999))
-      #   nGS <- data.frame(GS = unique(na.omit(pedGD$GS)), nGD = 9000:(length(unique(na.omit(pedGD$GS)))+8999))
-      #   ped <- pedGD %>% left_join(.,nGD, by="GD") %>% left_join(.,nGS, by = "GS") %>% select(c(-GD,-GS)) %>% mutate(sire=GS, .after = nProg) %>% 
-      #     setNames(c("idNum","sire","dam")) %>% rbind(.,ped)
-      # }
+      if(any(duplicated(ped[,1])==TRUE)){
+        stop("ERROR: There is duplicated individuals, please check your data")
+      }
       
       ped[is.na(ped)] <- 0
       return(ped)
@@ -322,31 +330,26 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
     
     # reliability_and_individual_blup -----------------------------------------
     
-    if(any(names(data)=="GD")){
+    if("GD"%in%names(data)){
       r2GD <- mAdd$ranef$genetic[[1]] %>% 
-        mutate(r2=1-(s.e.)^2/(diag(diag(length(mAdd$ranef$genetic[[1]][,1])))*as.data.frame(mAdd$var)["Residual",1])) %>% 
-        filter(row_number() <= uniqueGD) %>% add_column(GD = nGD$GD, .before = "value") %>% mutate(value=value) %>% mutate(s.e.=s.e.) %>% 
+        mutate(r2=1-(s.e.)^2/(diag(diag(length(mAdd$ranef$genetic[[1]][,1])))*as.data.frame(mAdd$var)["genetic",1])) %>% 
+        filter(row_number() %in% nGD$nGD) %>% add_column(GD = nGD$GD, .before = "value") %>% mutate(value=value) %>% mutate(s.e.=s.e.) %>% 
         rename(a = value)
-      
-      r2Prog <- mAdd$ranef$genetic[[1]] %>% 
-        mutate(r2=1-(s.e.)^2/(diag(diag(length(mAdd$ranef$genetic[[1]][,1])))*as.data.frame(mAdd$var)["Residual",1])) %>% 
-        filter(between(row_number(), uniqueGD+1,uniqueProg+uniqueGD)) %>% add_column(Prog = nProg$Prog, .before = "value") %>% mutate(value=value) %>% mutate(s.e.=s.e.) %>% 
-        rename(a = value)
-      
-      r2Ind <- mAdd$ranef$genetic[[1]] %>% 
-        mutate(r2=1-s.e.^2/(diag(diag(length(mAdd$ranef$genetic[[1]][,1])))*as.data.frame(mAdd$var)["Residual",1])) %>% 
-        filter(row_number() > uniqueProg+uniqueGD) %>% add_column(Ind = data$Ind, .before = "value") %>% filter(!is.na(resp)) %>% rename(a = value)
-      
-    }else{
-      r2Prog <- mAdd$ranef$genetic[[1]] %>% 
-        mutate(r2=1-(s.e.)^2/(diag(diag(length(mAdd$ranef$genetic[[1]][,1])))*as.data.frame(mAdd$var)["Residual",1])) %>% 
-        filter(row_number() < nrow(nProg)+1) %>% add_column(Prog = nProg$Prog, .before = "value") %>% mutate(value=value) %>% mutate(s.e.=s.e.) %>% 
-        rename(a = value)
-      
-      r2Ind <- mAdd$ranef$genetic[[1]] %>% 
-        mutate(r2=1-s.e.^2/(diag(diag(length(mAdd$ranef$genetic[[1]][,1])))*as.data.frame(mAdd$var)["Residual",1])) %>% 
-        filter(row_number() > nrow(nProg)) %>% add_column(Ind = data$Ind, .before = "value") %>% filter(!is.na(resp)) %>% rename(a = value)
     }
+    if("sire"%in%names(data)){
+      r2Sire <- mAdd$ranef$genetic[[1]] %>% 
+        mutate(r2=1-(s.e.)^2/(diag(diag(length(mAdd$ranef$genetic[[1]][,1])))*as.data.frame(mAdd$var)["genetic",1])) %>% 
+        filter(row_number() %in% nSire$nSire) %>% add_column(Sire = nSire$sire, .before = "value") %>% mutate(value=value) %>% mutate(s.e.=s.e.) %>% 
+        rename(a = value)
+    }
+    r2Prog <- mAdd$ranef$genetic[[1]] %>% 
+      mutate(r2=1-(s.e.)^2/(diag(diag(length(mAdd$ranef$genetic[[1]][,1])))*as.data.frame(mAdd$var)["genetic",1])) %>% 
+      filter(row_number() %in% nProg$nProg) %>% add_column(Prog = nProg$Prog, .before = "value") %>% mutate(value=value) %>% mutate(s.e.=s.e.) %>% 
+      rename(a = value)
+    
+    r2Ind <- mAdd$ranef$genetic[[1]] %>% 
+      mutate(r2=1-s.e.^2/(diag(diag(length(mAdd$ranef$genetic[[1]][,1])))*as.data.frame(mAdd$var)["genetic",1])) %>% 
+      filter(row_number() > max(nProg$nProg)) %>% add_column(Ind = data$Ind, .before = "value") %>% filter(!is.na(resp)) %>% rename(a = value)
     
     r2Ind_df <- r2Ind %>% 
       {if (plotType=="LP") separate(.,Ind,c("Block","Progeny","Plot","Tree"),  sep="\\.") else separate(.,Ind,c("Block","Progeny","Tree"), sep="\\.")}
@@ -977,13 +980,20 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
     cat("\n----------------------------------------------------------------------------------------------\n")
     cat("                                             |Accuracy| \n"                                        )
     cat("----------------------------------------------------------------------------------------------\n\n")
-    if(any(names(data)=="GD")){
-      cat("----------------------------------------------------------------------------------------------\n\n")
+    if("GD"%in%names(data)){
+      cat("\n")
       cat("--------------------------------------- Grandmother accuracy ---------------------------------\n\n")
       print(r2GD)
     }
+    if("sire"%in%names(data)){
+      cat("\n")
+      cat("----------------------------------------- Sires accuracy -------------------------------------\n\n")
+      print(r2Sire)
+    }
+    cat("\n")
     cat("----------------------------------------- Treatment accuracy ---------------------------------\n\n")
     if(treatment=="Clone"){
+      cat("\n")
       print(r2Clone)}
     if(treatment=="Prog"){
       print(r2Prog)
