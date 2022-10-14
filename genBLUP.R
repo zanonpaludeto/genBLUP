@@ -645,7 +645,7 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
     # reliability_and_individual_blup -----------------------------------------
     
     r2Clone <- mClone$ranef$Clone[[1]] %>% 
-      mutate(r2=1-(s.e./2)^2/(diag(diag(length(mClone$ranef$Clone[[1]][,1])))*as.data.frame(mClone$var)["Residual",1])) %>% 
+      mutate(r2=1-(s.e./2)^2/(diag(diag(length(mClone$ranef$Clone[[1]][,1])))*as.data.frame(mClone$var)["Clone",1])) %>% 
       rownames_to_column("Clone") %>% rename(g = value)
     
     accClone <- mean(sqrt(1-(((r2Clone$s.e.))^2)/(mClone$var["Clone",1])), na.rm=T)
