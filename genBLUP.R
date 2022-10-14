@@ -101,10 +101,11 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
         codData <- cbind(codData,percCod)
       }
     }
-    
-    treatPerc <- codData %>% dplyr::select(as.name(treatment),(which(names(.) == "nObs") + 1):last_col())
-    treatMeans <- cbind(treatMeans,treatPerc[,-1])
-    treatMeans[is.na(treatMeans)] <- 0
+    if(any(codPerc%in%codData)){
+      treatPerc <- codData %>% dplyr::select(as.name(treatment),(which(names(.) == "nObs") + 1):last_col())
+      treatMeans <- cbind(treatMeans,treatPerc[,-1])
+      treatMeans[is.na(treatMeans)] <- 0
+    }
   }
   
   if(any(random=="Proc")||any(fixed=="Proc")){
@@ -143,13 +144,13 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
   
   # pedigree matrix ---------------------------------------------------------
   
-  #creating Ind column
-  if(plotType=="LP"){  
-    data$Ind <- paste0(data$Rep,sep = ".",data[,names(data) %in% treatment],sep=".",data$Parc,sep=".",data$Arv)
-  }else{data$Ind <- paste0(data$Rep,sep = ".",data[,names(data) %in% treatment],sep=".",data$Arv)  
-  }
-  
   if(treatment=="Prog"){
+    
+    #creating Ind column
+    if(plotType=="LP"){  
+      data$Ind <- paste0(data$Rep,sep = ".",data[,names(data) %in% treatment],sep=".",data$Parc,sep=".",data$Arv)
+    }else{data$Ind <- paste0(data$Rep,sep = ".",data[,names(data) %in% treatment],sep=".",data$Arv)  
+    }
     
     #counting nProg (dams)
     uniqueProg <- length(na.omit(unique(data$Prog)))
@@ -379,7 +380,7 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
         h2a <- vA/vPhen
         h2m <- (0.25*vA) / (0.25*vA+(vParc/nRep)+vE/(nRep*nArv))
         
-        genParNames <- c("vA","vParc","vE","vPhen","h2a","h2d",
+        genParNames <- c("vA","vParc","vE","vPhen","h2a","h2m","h2d",
                          "c2Parc","accProg","accInd","CVgi%","CVe%","Mean")
         
         if(method=="ai"){
@@ -389,11 +390,11 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
           SEvE <- mAdd$var["Residual",2]
           h2aSE <- mAdd$funvars["sample sd",1]
           
-          genPar <- round(data.frame(Estimates=c(vA,vParc,vE,vPhen,h2a,h2d,c2Parc,accProg,accInd,CVgi,CVe,Mean), 
-                                     SE=c(SEvA,SEvParc,SEvE,NA,h2aSE,matrix(NA,nrow=7,ncol=1)), 
+          genPar <- round(data.frame(Estimates=c(vA,vParc,vE,vPhen,h2a,h2m,h2d,c2Parc,accProg,accInd,CVgi,CVe,Mean), 
+                                     SE=c(SEvA,SEvParc,SEvE,NA,h2aSE,matrix(NA,nrow=8,ncol=1)), 
                                      row.names = genParNames),genPar_digits)
         }else{
-          genPar <- round(data.frame(Estimates=c(vA,vParc,vE,vPhen,h2a,h2d,c2Parc,accProg,accInd,CVgi,CVe,Mean),
+          genPar <- round(data.frame(Estimates=c(vA,vParc,vE,vPhen,h2a,h2m,h2d,c2Parc,accProg,accInd,CVgi,CVe,Mean),
                                      row.names = genParNames),genPar_digits)
         }
         
