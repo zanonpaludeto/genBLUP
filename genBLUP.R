@@ -291,22 +291,22 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
   control=lmerControl(check.conv.singular = .makeCC(action = "ignore",  tol = 1e-4))
   defaultW <- getOption("warn") 
   options(warn = -1)
-  convergence = F
+  convergence = T
   
-  while(!convergence){
+  while(convergence){
     suppressMessages(
       if(treatment=="Prog"){
-        mAdd <- breedR::remlf90(fixef,
-                                random = ranef,
-                                genetic = list(model = "add_animal",
-                                               pedigree = ped,id = "idNum"),
-                                data = data,method = method,
-                                progsf90.options = 'EM-REML 10')
+        tryCatch(mAdd <- breedR::remlf90(fixef,
+                                         random = ranef,
+                                         genetic = list(model = "add_animal",
+                                                        pedigree = ped,id = "idNum"),
+                                         data = data,method = method,
+                                         progsf90.options = 'EM-REML 10'), error = function(e) {convergence <<- TRUE})
       }else{
-        mClone <- breedR::remlf90(fixef,
-                                  random = ranef,
-                                  data = data,method = method,
-                                  progsf90.options = 'EM-REML 10')
+        tryCatch(mClone <- breedR::remlf90(fixef,
+                                           random = ranef,
+                                           data = data,method = method,
+                                           progsf90.options = 'EM-REML 10'), error = function(e) {convergence <<- TRUE})
       })
     
     if(is.null(random)){
@@ -320,11 +320,17 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
     
     mSig <- lme4::lmer(lmerModel, data=data, control = control)
     
-    convergence <- ifelse(treatment=="Prog",any(!is.na(mAdd$var[,1])),any(!is.na(mClone$var[,1])))
-    if(convergence==F){
-      cat("AI-REML algorithm did not converge, switching to EM-REML\n")
+    if(!exists("mAdd")&!exists("mClone")){
+      cat("AI-REML algorithm got an error, switching to EM-REML\n")
       method = "em"
-    }}
+    }else{
+      convergence <- ifelse(treatment=="Prog",any(is.na(mAdd$var[,1])),any(is.na(mClone$var[,1])))
+      if(convergence){
+        cat("AI-REML algorithm did not converge, switching to EM-REML\n")
+        method = "em"
+      }
+    }
+  }
   options(warn = defaultW)
   
   if(treatment=="Prog"){
@@ -648,7 +654,7 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
       mutate(r2=1-(s.e./2)^2/(diag(diag(length(mClone$ranef$Clone[[1]][,1])))*as.data.frame(mClone$var)["Clone",1])) %>% 
       rownames_to_column("Clone") %>% rename(g = value)
     
-    accClone <- mean(sqrt(1-(((r2Clone$s.e.))^2)/(mClone$var["Clone",1])), na.rm=T)
+    accClone <- mean(sqrt(1-((r2Clone$s.e.)^2)/(mClone$var["Clone",1])), na.rm=T)
     
     # Genetic Parameters
     vG <- mClone$var["Clone",1]
