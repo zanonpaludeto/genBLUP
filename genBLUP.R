@@ -684,7 +684,7 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
                                     c(vG,vParc,vE),
                                     mClone$reml$invAI) 
           
-          genPar <- round(data.frame(Estimates=c(vG,vParc,vE,vPhen,h2GSE,h2mc,c2Parc,accClone,CVg,CVe,Mean), 
+          genPar <- round(data.frame(Estimates=c(vG,vParc,vE,vPhen,h2G,h2mc,c2Parc,accClone,CVg,CVe,Mean), 
                                      SE=c(SEvG,SEvParc,SEvE,NA,h2GSE,matrix(NA,nrow=6,ncol=1)), 
                                      row.names = genParNames),genPar_digits)
         }else{
