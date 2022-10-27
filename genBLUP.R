@@ -101,7 +101,7 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
         codData <- cbind(codData,percCod)
       }
     }
-    if(any(codPerc%in%codData)){
+    if(any(codPerc%in%names(codData))){
       treatPerc <- codData %>% dplyr::select(as.name(treatment),(which(names(.) == "nObs") + 1):last_col())
       treatMeans <- cbind(treatMeans,treatPerc[,-1])
       treatMeans[is.na(treatMeans)] <- 0
