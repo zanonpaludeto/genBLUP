@@ -121,15 +121,16 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
     grpMatrix <- as.matrix(aggregate(resp, by=list(sub_group$grp), FUN=expAnalysis))
     grpMeans <- setNames(as.data.frame(grpMatrix),names)
   }
-  treatMeans <- groupMeans(data,treatment)
-  repMeans <- groupMeans(data,"Rep")
+  suppressMessages(treatMeans <- groupMeans(data,treatment))
+  suppressMessages(repMeans <- groupMeans(data,"Rep"))
+  
   if(GxE){
     envMeans <- groupMeans(data,"Env")
     repMeans <- groupMeans(data,"EnvRep") %>% separate(.,EnvRep, into = c("Env","Rep"), sep="_x_")
   }
   
   if(any(random=="Proc")||any(fixed=="Proc")){
-    procMeans <- groupMeans(data,"Proc")
+    suppressMessages(procMeans <- groupMeans(data,"Proc"))
   }
   
   if(!is.null(codPerc)){
