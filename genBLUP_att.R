@@ -733,11 +733,6 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
     # Progeny BLUP
     progBLUP <- r2Prog %>% dplyr::select(Prog,a) %>% rename(Progeny=Prog) %>% arrange(desc(a))
     
-    # Progeny BLUP (g) plus ge
-    if(GxE) geBLUP <- mAdd$ranef$EnvProg %>% as.data.frame() %>% rownames_to_column() %>% separate(.,rowname,c("Env","Progeny"),sep = "_x_") %>% 
-      left_join(.,progBLUP,by="Progeny") %>% left_join(.,envMeans[,1:2], by="Env") %>% mutate(a=a/2, Mean=as.numeric(Mean),"g+ge"=a+value,"g+ge+u"=a+value+Mean) %>% 
-      dplyr::select(-c(s.e.,a,value,Mean)) %>% arrange(desc(.[,3])) %>% split(.,f=~Env)
-    
     # Individual_BLUP_genetic_gain_and_effectve_population_size --------------- 
     
     if("sire"%in%names(data)){
@@ -783,6 +778,11 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
     }
     
     if(GxE){
+      
+      # Progeny BLUP (g) plus ge
+      if(GxE) geBLUP <- mAdd$ranef$EnvProg %>% as.data.frame() %>% rownames_to_column() %>% separate(.,rowname,c("Env","Progeny"),sep = "_x_") %>% 
+          left_join(.,progBLUP,by="Progeny") %>% left_join(.,envMeans[,1:2], by="Env") %>% mutate(a=a/2, Mean=as.numeric(Mean),"g+ge"=a+value,"g+ge+u"=a+value+Mean) %>% 
+          dplyr::select(-c(s.e.,a,value,Mean)) %>% arrange(desc(.[,3])) %>% split(.,f=~Env)
       
       # BLUP indexes ------------------------------------------------------------
       
@@ -887,8 +887,9 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
     
     # genetic_parameters_accuracy_and_Blup -------------------------------------------------
     genParBLUP$genPar <- genPar; genParBLUP$blupAccuracy$progAccuracy <- r2Prog; genParBLUP$blupAccuracy$indAccuracy <- r2Ind_df 
-    genParBLUP$BLUP$progBLUP <- progBLUP; if("Proc"%in%random) genParBLUP$BLUP$procBLUP <- procBLUP; genParBLUP$BLUP$indBLUP <- indBLUP; 
-    genParBLUP$BLUP$overBLUP <- overBLUP
+    genParBLUP$BLUP$progBLUP <- progBLUP; if(GxE) genParBLUP$BLUP$geBLUP <- geBLUP; if(GxE) genParBLUP$BLUP$blupIndex <- indexBLUP; 
+    if("Proc"%in%random) genParBLUP$BLUP$procBLUP <- procBLUP; if(PxE) genParBLUP$BLUP$procgeBLUP <- procgeBLUP;
+    genParBLUP$BLUP$indBLUP <- indBLUP; genParBLUP$BLUP$overBLUP <- overBLUP
     
     if(optimizeSelection==TRUE){
       genParBLUP$BLUP$optimizedBLUP <- optimizedBLUP
@@ -1265,8 +1266,9 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
     genParBLUP$Model$mSig$randomSig <- suppressMessages(lmerTest::ranova(mSig, reduce.terms = F))
     
     # genetic_parameters_accuracy_and_Blup -------------------------------------------------
-    genParBLUP$genPar <- genPar; genParBLUP$blupAccuracy$cloneAccuracy <- r2Clone;
-    genParBLUP$BLUP$cloneBLUP <- cloneBLUP; if("Proc"%in%random) genParBLUP$BLUP$procBLUP
+    genParBLUP$genPar <- genPar; genParBLUP$blupAccuracy$cloneAccuracy <- r2Clone; genParBLUP$BLUP$cloneBLUP <- cloneBLUP; 
+    if(GxE) genParBLUP$BLUP$geBLUP <- geBLUP; if(GxE) genParBLUP$BLUP$blupIndex <- indexBLUP
+    if("Proc"%in%random) genParBLUP$BLUP$procBLUP <- procBLUP; if(PxE) genParBLUP$BLUP$procgeBLUP <- procgeBLUP;
     
   }
   
