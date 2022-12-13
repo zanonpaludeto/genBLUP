@@ -133,7 +133,7 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
     suppressMessages(procMeans <- groupMeans(data,"Proc"))
   }
   
-  if(!is.null(codPerc)){
+  if(!is.null(codPerc)&any(codPerc%in%data$Cod)){
     countTreat <- data %>% count(get(treatment)) %>% setNames(c(treatment,"nObs"))
     suppressMessages(codData <- separate_rows(data,Cod) %>% count(!!as.name(treatment),Cod) %>% filter(Cod!=".") %>% pivot_wider(., names_from = Cod,values_from = n) %>% 
                        left_join(countTreat,.) %>% relocate(nObs, .after = last_col()))
@@ -622,10 +622,10 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
           vPhen <- vA + vGxE + vE
           c2GxE <- vGxE/vPhen
           h2m <- (0.25*vA) / (0.25*vA+(vGxE/nEnv)+vE/(nRep))
-          genParNames <- c("vA","vE","vPhen","h2a","h2d","h2m","accProg","accInd","CVgi%","CVe%","Mean")
+          genParNames <- c("vA","vGxE","vE","vPhen","h2a","h2d","h2m","accProg","accInd","c2GxE","rgloc","CVgi%","CVe%","Mean")
         }else{
           vPhen <- vA + vE
-          genParNames <- c("vA","vGxE","vE","vPhen","h2a","h2d","h2m","accProg","accInd","c2GxE","rgloc","CVgi%","CVe%","Mean")
+          genParNames <- c("vA","vGxE","vE","vPhen","h2a","h2d","h2m","accProg","accInd","CVgi%","CVe%","Mean")
         }
         h2a <- vA/vPhen
         h2d <- (0.75*vA) / (0.75*vA+vE)
