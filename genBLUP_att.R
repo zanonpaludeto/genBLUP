@@ -31,8 +31,9 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
   if(treatment=="Prog"&optimizeSelection==T&!is.numeric(maxIndProgeny)|!is.numeric(maxProgenyBlock)){
     stop("ERROR: If you want to optimize selection, please choose numeric parameters for maxIndProgeny and maxProgenyBlock")
   }
-  if(plotType=="LP"&!"Parc"%in%random){
-    stop("ERROR: If you're trying to adjust an LP model, you must specify the plot effect as 'Parc' in the random argument")
+  if(plotType=="LP"&is.null(random)){
+    cat(paste0("You choose to adjust an LP model without specifying 'Parc' in the random argument, 
+the function will automatically build Rep:",treatment," cross interactions and proceed the analysis \n \n"))
   }
   if(PxE&!GxE){
     stop("ERROR: Argument 'GxE' is FALSE. You need to run a GxE analysis to estimate a Provenance x Environment effect")
@@ -98,6 +99,12 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
     if("Proc"%in%random&PxE){
       data <- data %>% mutate(EnvProc = factor(paste0(Env,"_x_",Proc)))
       random <- c(random,"EnvProc")  
+    }
+  }else{
+    if(plotType=="LP"&is.null(random)){
+      random = "Parc"
+      if(treatment=="Prog") data <- data %>% mutate(Parc = factor(paste0(Rep,"_x_",Prog)))
+      if(treatment=="LP") data <- data %>% mutate(Parc = factor(paste0(Rep,"_x_",Prog)))
     }
   }
   
@@ -197,28 +204,28 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
     if(GxE){
       if("sire"%in%names(data)){
         if(plotType=="LP"){  
-          data$Ind <- paste0(data$seq,"│.│",data$Env,"│.│",data$Rep,"│.│",data$sire,"│.│",data[,names(data) %in% treatment],"│.│",data$Parc,"│.│",data$Arv)
+          data$Ind <- paste0(data$seq,"-x-",data$Env,"-x-",data$Rep,"-x-",data$sire,"-x-",data[,names(data) %in% treatment],"-x-",data$Parc,"-x-",data$Arv)
         }else{
-          data$Ind <- paste0(data$seq,"│.│",data$Env,"│.│",data$Rep,"│.│",data$sire,"│.│",data[,names(data) %in% treatment],"│.│",data$Arv)  
+          data$Ind <- paste0(data$seq,"-x-",data$Env,"-x-",data$Rep,"-x-",data$sire,"-x-",data[,names(data) %in% treatment],"-x-",data$Arv)  
         }
       }else{
         if(plotType=="LP"){  
-          data$Ind <- paste0(data$seq,"│.│",data$Env,"│.│",data$Rep,"│.│",data[,names(data) %in% treatment],"│.│",data$Parc,"│.│",data$Arv)
+          data$Ind <- paste0(data$seq,"-x-",data$Env,"-x-",data$Rep,"-x-",data[,names(data) %in% treatment],"-x-",data$Parc,"-x-",data$Arv)
         }else{
-          data$Ind <- paste0(data$seq,"│.│",data$Env,"│.│",data$Rep,"│.│",data[,names(data) %in% treatment],"│.│",data$Arv)  
+          data$Ind <- paste0(data$seq,"-x-",data$Env,"-x-",data$Rep,"-x-",data[,names(data) %in% treatment],"-x-",data$Arv)  
         }
       }
       
     }else{
       if("sire"%in%names(data)){
         if(plotType=="LP"){  
-          data$Ind <- paste0(data$seq,"│.│",data$Rep,"│.│",data$sire,"│.│",data[,names(data) %in% treatment],"│.│",data$Parc,"│.│",data$Arv)
-        }else{data$Ind <- paste0(data$seq,"│.│",data$Rep,"│.│",data$sire,"│.│",data[,names(data) %in% treatment],"│.│",data$Arv)  
+          data$Ind <- paste0(data$seq,"-x-",data$Rep,"-x-",data$sire,"-x-",data[,names(data) %in% treatment],"-x-",data$Parc,"-x-",data$Arv)
+        }else{data$Ind <- paste0(data$seq,"-x-",data$Rep,"-x-",data$sire,"-x-",data[,names(data) %in% treatment],"-x-",data$Arv)  
         }
       }else{
         if(plotType=="LP"){  
-          data$Ind <- paste0(data$seq,"│.│",data$Rep,"│.│",data[,names(data) %in% treatment],"│.│",data$Parc,"│.│",data$Arv)
-        }else{data$Ind <- paste0(data$seq,"│.│",data$Rep,"│.│",data[,names(data) %in% treatment],"│.│",data$Arv)  
+          data$Ind <- paste0(data$seq,"-x-",data$Rep,"-x-",data[,names(data) %in% treatment],"-x-",data$Parc,"-x-",data$Arv)
+        }else{data$Ind <- paste0(data$seq,"-x-",data$Rep,"-x-",data[,names(data) %in% treatment],"-x-",data$Arv)  
         }
       }}
     
@@ -452,25 +459,25 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
       
       if(GxE){
         r2Ind_df <- r2Ind %>% 
-          {if (plotType=="LP") separate(.,Ind,c("Seq","Env","Block","Sire","Progeny","Plot","Tree"),  sep="│.│") else 
-            separate(.,Ind,c("Seq","Env","Block","Sire","Progeny","Tree"), sep="│.│")}
+          {if (plotType=="LP") separate(.,Ind,c("Seq","Env","Block","Sire","Progeny","Plot","Tree"),  sep="-x-") else 
+            separate(.,Ind,c("Seq","Env","Block","Sire","Progeny","Tree"), sep="-x-")}
       }else{
         r2Ind_df <- r2Ind %>% 
-          {if (plotType=="LP") separate(.,Ind,c("Seq","Block","Sire","Progeny","Plot","Tree"),  sep="│.│") else 
-            separate(.,Ind,c("Seq","Block","Sire","Progeny","Tree"), sep="│.│")}
+          {if (plotType=="LP") separate(.,Ind,c("Seq","Block","Sire","Progeny","Plot","Tree"),  sep="-x-") else 
+            separate(.,Ind,c("Seq","Block","Sire","Progeny","Tree"), sep="-x-")}
       }
       
     }else{
       
       if(GxE){
         r2Ind_df <- r2Ind %>% 
-          {if (plotType=="LP") separate(.,Ind,c("Seq","Env","Block","Progeny","Plot","Tree"),  sep="│.│") else 
-            separate(.,Ind,c("Seq","Env","Block","Progeny","Tree"), sep="│.│")}
+          {if (plotType=="LP") separate(.,Ind,c("Seq","Env","Block","Progeny","Plot","Tree"),  sep="-x-") else 
+            separate(.,Ind,c("Seq","Env","Block","Progeny","Tree"), sep="-x-")}
         
       }else{
         r2Ind_df <- r2Ind %>% 
-          {if (plotType=="LP") separate(.,Ind,c("Seq","Block","Progeny","Plot","Tree"),  sep="│.│") else 
-            separate(.,Ind,c("Seq","Block","Progeny","Tree"), sep="│.│")}
+          {if (plotType=="LP") separate(.,Ind,c("Seq","Block","Progeny","Plot","Tree"),  sep="-x-") else 
+            separate(.,Ind,c("Seq","Block","Progeny","Tree"), sep="-x-")}
       }}  
     
     
@@ -745,12 +752,12 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
       if(GxE){
         indBLUP <- data %>% left_join(.,r2Ind[,1:2],by="Ind") %>% 
           {if (any(random=="Proc")||any(fixed=="Proc")) dplyr::select(.,Proc,Ind,resp,a,Cod) else dplyr::select(.,Ind,resp,a,Cod)} %>% rename(f=resp) %>% 
-          {if (plotType=="LP") separate(.,Ind,c("Seq","Env","Block","Sire","Progeny","Plot","Tree"),  sep="│.│") else separate(.,Ind,c("Seq","Env","Block","Sire","Progeny","Tree"), sep="│.│")} %>% 
+          {if (plotType=="LP") separate(.,Ind,c("Seq","Env","Block","Sire","Progeny","Plot","Tree"),  sep="-x-") else separate(.,Ind,c("Seq","Env","Block","Sire","Progeny","Tree"), sep="-x-")} %>% 
           mutate("u+a" = Mean+a) %>% drop_na() %>% arrange(desc(a)) %>% dplyr::select(-Seq)
       }else{
         indBLUP <- data %>% left_join(.,r2Ind[,1:2],by="Ind") %>% 
           {if (any(random=="Proc")||any(fixed=="Proc")) dplyr::select(.,Proc,Ind,resp,a,Cod) else dplyr::select(.,Ind,resp,a,Cod)} %>% rename(f=resp) %>% 
-          {if (plotType=="LP") separate(.,Ind,c("Seq","Block","Sire","Progeny","Plot","Tree"),  sep="│.│") else separate(.,Ind,c("Seq","Block","Sire","Progeny","Tree"), sep="│.│")} %>% 
+          {if (plotType=="LP") separate(.,Ind,c("Seq","Block","Sire","Progeny","Plot","Tree"),  sep="-x-") else separate(.,Ind,c("Seq","Block","Sire","Progeny","Tree"), sep="-x-")} %>% 
           mutate("u+a" = Mean+a) %>% drop_na() %>% arrange(desc(a)) %>% dplyr::select(-Seq)
       }
     }else{
@@ -758,12 +765,12 @@ genBLUP <- function(data, varResp, treatment, plotType, fixed = "Rep", random = 
       if(GxE){
         indBLUP <- data %>% left_join(.,r2Ind[,1:2],by="Ind") %>% 
           {if (any(random=="Proc")||any(fixed=="Proc")) dplyr::select(.,Proc,Ind,resp,a,Cod) else dplyr::select(.,Ind,resp,a,Cod)} %>% rename(f=resp) %>% 
-          {if (plotType=="LP") separate(.,Ind,c("Seq","Env","Block","Progeny","Plot","Tree"),  sep="│.│") else separate(.,Ind,c("Seq","Env","Block","Progeny","Tree"), sep="│.│")} %>% 
+          {if (plotType=="LP") separate(.,Ind,c("Seq","Env","Block","Progeny","Plot","Tree"),  sep="-x-") else separate(.,Ind,c("Seq","Env","Block","Progeny","Tree"), sep="-x-")} %>% 
           mutate("u+a" = Mean+a) %>% drop_na() %>% arrange(desc(a)) %>% dplyr::select(-Seq)
       }else{
         indBLUP <- data %>% left_join(.,r2Ind[,1:2],by="Ind") %>% 
           {if (any(random=="Proc")||any(fixed=="Proc")) dplyr::select(.,Proc,Ind,resp,a,Cod) else dplyr::select(.,Ind,resp,a,Cod)} %>% rename(f=resp) %>% 
-          {if (plotType=="LP") separate(.,Ind,c("Seq","Block","Progeny","Plot","Tree"),  sep="│.│") else separate(.,Ind,c("Seq","Block","Progeny","Tree"), sep="│.│")} %>% 
+          {if (plotType=="LP") separate(.,Ind,c("Seq","Block","Progeny","Plot","Tree"),  sep="-x-") else separate(.,Ind,c("Seq","Block","Progeny","Tree"), sep="-x-")} %>% 
           mutate("u+a" = Mean+a) %>% drop_na() %>% arrange(desc(a)) %>% dplyr::select(-Seq)
       }
     }
