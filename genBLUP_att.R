@@ -1131,7 +1131,8 @@ the function will automatically build Rep:",treatment," cross interactions and p
           vPhen <- vG + vGxE + vRdm1 + vE
           c2GxE <- vGxE/vPhen
           h2mc <- (vG) / (vG+(vGxE/nEnv)+(vE/nRep))
-          genParNames <- c("vG","vGxE",paste0("v",random),"vE","vPhen","h2G","h2mc","c2GxE",paste0("c2",random),"rgloc","accClone","CVg%","CVe%","Mean")
+          genParNames <- c("vG","vGxE",paste0("v",random),"vE","vPhen","h2G","h2mc","c2GxE",paste0("c2",random),
+                           "rgloc","accClone","CVg%","CVe%","Mean")
         }else{
           vPhen <- vG + vRdm1 + vE
           h2mc <- (vG) / (vG+(vE/nRep))
@@ -1160,7 +1161,7 @@ the function will automatically build Rep:",treatment," cross interactions and p
                                              SE=c(SEvG,SEvGxE,SEvRdm1,SEvE,NA,h2GSE,matrix(NA,nrow=8,ncol=1)), 
                                              row.names = genParNames),genPar_digits) else 
                                                genPar <- round(data.frame(Estimates=c(vG,vRdm1,vE,vPhen,h2G,h2mc,c2Rdm1,accClone,CVg,CVe,Mean), 
-                                                                          SE=c(SEvG,SEvRdm1,SEvE,NA,h2GSE,matrix(NA,nrow=5,ncol=1)), 
+                                                                          SE=c(SEvG,SEvRdm1,SEvE,NA,h2GSE,matrix(NA,nrow=6,ncol=1)), 
                                                                           row.names = genParNames),genPar_digits)
         }else{
           if(GxE) genPar <- round(data.frame(Estimates=c(vG,vGxE,vRdm1,vE,vPhen,h2G,h2mc,c2GxE,c2Rdm1,rgloc,accClone,CVg,CVe,Mean),
@@ -1209,7 +1210,7 @@ the function will automatically build Rep:",treatment," cross interactions and p
                                              SE=c(SEvG,SEvGxE,SEvRdm1,SEvRdm2,SEvE,NA,h2GSE,matrix(NA,nrow=9,ncol=1)), 
                                              row.names = genParNames),genPar_digits) else 
                                                genPar <- round(data.frame(Estimates=c(vG,vRdm1,vRdm2,vE,vPhen,h2G,h2mc,c2Rdm1,c2Rdm2,accClone,CVg,CVe,Mean), 
-                                                                          SE=c(SEvG,SEvRdm1,SEvRdm2,SEvE,NA,h2GSE,matrix(NA,nrow=5,ncol=1)), 
+                                                                          SE=c(SEvG,SEvRdm1,SEvRdm2,SEvE,NA,h2GSE,matrix(NA,nrow=7,ncol=1)), 
                                                                           row.names = genParNames),genPar_digits)
         }else{
           if(GxE) genPar <- round(data.frame(Estimates=c(vG,vGxE,vRdm1,vRdm2,vE,vPhen,h2G,h2mc,c2GxE,c2Rdm1,c2Rdm2,rgloc,accClone,CVg,CVe,Mean),
