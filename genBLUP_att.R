@@ -637,7 +637,7 @@ the function will automatically build Rep:",treatment," cross interactions and p
           genParNames <- c("vA","vGxE","vE","vPhen","h2a","h2d","h2m","accProg","accInd","c2GxE","rgloc","CVgi%","CVe%","Mean")
         }else{
           vPhen <- vA + vE
-          genParNames <- c("vA","vGxE","vE","vPhen","h2a","h2d","h2m","accProg","accInd","CVgi%","CVe%","Mean")
+          genParNames <- c("vA","vE","vPhen","h2a","h2d","h2m","accProg","accInd","CVgi%","CVe%","Mean")
         }
         h2a <- vA/vPhen
         h2d <- (0.75*vA) / (0.75*vA+vE)
