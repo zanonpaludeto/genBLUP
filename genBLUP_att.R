@@ -98,13 +98,13 @@ the function will automatically build Rep:",treatment," cross interactions and p
     }
     if("Proc"%in%random&PxE){
       data <- data %>% mutate(EnvProc = factor(paste0(Env,"_x_",Proc)))
-      random <- c(random,"EnvProc")  
+      random <- c(random,"EnvProc")
     }
   }else{
     if(plotType=="LP"&is.null(random)){
-      random = "Parc"
+      random = c(random,"Parc")
       if(treatment=="Prog") data <- data %>% mutate(Parc = factor(paste0(Rep,"_x_",Prog)))
-      if(treatment=="LP") data <- data %>% mutate(Parc = factor(paste0(Rep,"_x_",Prog)))
+      if(treatment=="Clone") data <- data %>% mutate(Parc = factor(paste0(Rep,"_x_",Clone)))
     }
   }
   
