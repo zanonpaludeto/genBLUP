@@ -322,9 +322,10 @@ the function will automatically build Rep:",treatment," cross interactions and p
   if(GxE){
     
     # fixed effects
-    if(length(fixed)==1&fixed=="Rep"){
+    if(any(length(fixed)==1&fixed=="Rep")){
       fixef <- as.formula(paste0("get(varResp) ~ Env + EnvRep"))
-    }else{
+    }
+    if(length(fixed)>1){
       fixef <- as.formula(paste0("get(varResp) ~ Env + EnvRep", paste("+",fixed[which(fixed!="Rep")], collapse=" + ")))
     }
     
