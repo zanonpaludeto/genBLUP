@@ -1,4 +1,4 @@
-genBLUP <- function(data, varResp, matGenCol, matGen, plotType, fixed = "Rep", random = NULL, method = "ai", GxE = F, PxE = F,
+genBLUP <- function(data, varResp, repCol, matGenCol, matGen, plotType, fixed = "Rep", random = NULL, method = "ai", GxE = F, PxE = F,
                     excludeControl = NULL, genPar_digits = 6, codPerc = NULL, optimizeSelection = FALSE, maxIndProgeny = NULL, 
                     maxProgenyBlock = NULL, excludeCod = NULL, directory = NULL){
   
@@ -15,11 +15,25 @@ genBLUP <- function(data, varResp, matGenCol, matGen, plotType, fixed = "Rep", r
     data$clone <- data[,matGenCol]
   }  
   
+  # creating_block_replicates_column ----------------------------------------
+
+  if(!is.null(repCol)){
+    if(repCol%in%fixed){
+      data$Rep <- data[,repCol]
+      fixed <- c("Rep",fixed)
+      fixed <- fixed[-which(fixed==repCol)]
+    }}
+  
   # stops and warnings ------------------------------------------------------
   
   if(!matGen %in% c("family","clone")){
     stop("ERROR: The argument 'matGen' must be 'family' or 'clone'")
-  }  
+  }
+  
+  if(!is.null(repCol)){
+    if(!repCol%in%fixed){
+      stop("ERROR: If you specify the block replicates column at repCol argument, you need to specify it at fixed effects")
+  }}
   
   if(!plotType %in% c("LP","STP")){
     stop("ERROR: The argument 'plotType' must be 'LP' or 'STP'")
@@ -97,13 +111,19 @@ the function will automatically build Rep:",matGenCol," cross interactions and p
   
   if(GxE){
     #creating basic GxE interactions
-    data <- data %>% mutate(EnvRep = factor(paste0(Env,"_x_",Rep)))
+    if("Rep"%in%fixed){
+      data <- data %>% mutate(EnvRep = factor(paste0(Env,"_x_",Rep)))
+    }
     if(matGen=="family"){
       data <- data %>% mutate(EnvFam = factor(paste0(Env,"_x_",family)))
-      if(plotType=="LP") data <- data %>% mutate(Parc = factor(paste0(Env,"_x_",Rep,"_x_",family)))
+      if("Rep"%in%fixed){
+        if(plotType=="LP") data <- data %>% mutate(Parc = factor(paste0(Env,"_x_",Rep,"_x_",family)))
+      }
     }else{
       data <- data %>% mutate(EnvClone = factor(paste0(Env,"_x_",clone)))
-      if(plotType=="LP") data <- data %>% mutate(Parc = factor(paste0(Env,"_x_",Rep,"_x_",clone)))
+      if("Rep"%in%fixed){
+        if(plotType=="LP") data <- data %>% mutate(Parc = factor(paste0(Env,"_x_",Rep,"_x_",clone)))
+      }
     }
     if("Proc"%in%random&PxE){
       data <- data %>% mutate(EnvProc = factor(paste0(Env,"_x_",Proc)))
@@ -112,15 +132,18 @@ the function will automatically build Rep:",matGenCol," cross interactions and p
   }else{
     if(plotType=="LP"&is.null(random)){
       random = c(random,"Parc")
-      if(matGen=="family") data <- data %>% mutate(Parc = factor(paste0(Rep,"_x_",family)))
-      if(matGen=="family") data <- data %>% mutate(Parc = factor(paste0(Rep,"_x_",clone)))
-    }
-  }
+      if("Rep"%in%fixed){
+        if(matGen=="family") data <- data %>% mutate(Parc = factor(paste0(Rep,"_x_",family)))
+        if(matGen=="family") data <- data %>% mutate(Parc = factor(paste0(Rep,"_x_",clone)))
+      }}}
   
   data <- data %>% arrange(get(matGen))
   
   resp <- data[,which(names(data)==varResp)]
   data$resp <- resp
+  
+  #create vector to round expAnalysis results
+  roundVector <- c(rep(genPar_digits,4),0,1,0,1)
   
   expAnalysis <- function(data){
     NAs <- sum(is.na(data))
@@ -130,6 +153,7 @@ the function will automatically build Rep:",matGenCol," cross interactions and p
     if (any(NAs)){
       exp <- c(exp,NAs)} else {exp <- c(exp,0)}
     exp <- round(c(exp,((exp[5]/(exp[5]+exp[7]))*100)), genPar_digits)
+    exp <- mapply(function(x,y){as.character(round(x,y))}, exp, roundVector)
     names(exp) <- c("Mean", "sd", "Min", "Max", "Vivas", "CV%", "NAs","Sob%")
     return(exp)
   }
@@ -142,12 +166,15 @@ the function will automatically build Rep:",matGenCol," cross interactions and p
     grpMatrix <- as.matrix(aggregate(resp, by=list(sub_group$grp), FUN=expAnalysis))
     grpMeans <- setNames(as.data.frame(grpMatrix),names)
   }
-  suppressMessages(treatMeans <- groupMeans(data,matGen))
-  suppressMessages(repMeans <- groupMeans(data,"Rep"))
+  suppressMessages(treatMeans <- groupMeans(data,matGenCol))
+  
+  suppressMessages(if("Rep"%in%fixed) repMeans <- groupMeans(data,"Rep"))
   
   if(GxE){
     envMeans <- groupMeans(data,"Env")
-    repMeans <- groupMeans(data,"EnvRep") %>% separate(.,EnvRep, into = c("Env","Rep"), sep="_x_")
+    if("Rep"%in%fixed){
+      repMeans <- groupMeans(data,"EnvRep") %>% separate(.,EnvRep, into = c("Env","Rep"), sep="_x_")
+    }
   }
   
   if(any(random=="Proc")||any(fixed=="Proc")){
@@ -331,6 +358,9 @@ the function will automatically build Rep:",matGenCol," cross interactions and p
   if(GxE){
     
     # fixed effects
+    if(is.null(fixed)){
+      fixef <- as.formula(paste0("get(varResp) ~ Env"))
+    }
     if(any(length(fixed)==1&fixed=="Rep")){
       fixef <- as.formula(paste0("get(varResp) ~ Env + EnvRep"))
     }
@@ -407,24 +437,26 @@ the function will automatically build Rep:",matGenCol," cross interactions and p
     
     #significance of effects
     
+    treatment <- ifelse(matGen=="clone","Clone","Fam")
+    
     if(GxE){
       if(is.null(random)){
         lmerModel <- as.formula(paste0(format(fixef)," + ", 
-                                       paste0("(1|", matGen, ")"," + ","(1|", paste0("Env",matGen), ")"))) 
+                                       paste0("(1|", treatment, ")"," + ","(1|", paste0("Env",treatment), ")"))) 
         
       }else{
         lmerModel <- as.formula(paste0(paste0("get(varResp) ~ Env + EnvRep")," + ", 
-                                       paste0("(1|", matGen, ")","+","(1|", paste0("Env",matGen), ") + ")
+                                       paste0("(1|", treatment, ")","+","(1|", paste0("Env",treatment), ") + ")
                                        , paste("(1|", random, collapse=") + "),")"))
       }
     }else{
       if(is.null(random)){
         lmerModel <- as.formula(paste0("get(varResp) ~ ",paste(fixed, collapse=" + ")," + ", 
-                                       paste0("(1|", matGen, ")"))) 
+                                       paste0("(1|", treatment, ")"))) 
         
       }else{
         lmerModel <- as.formula(paste0("get(varResp) ~ ",paste(fixed, collapse=" + ")," + ", 
-                                       paste0("(1|", matGen, ") + ", paste("(1|",random, collapse=") + "),")")))
+                                       paste0("(1|", treatment, ") + ", paste("(1|",random, collapse=") + "),")")))
       }
     }
     suppressMessages(mSig <- lme4::lmer(lmerModel, data=data, control = control))
@@ -500,7 +532,7 @@ the function will automatically build Rep:",matGenCol," cross interactions and p
     vA <- mAdd$var["genetic",1]
     vE <- mAdd$var["Residual",1]
     Mean <- mean(data$resp,na.rm=T)
-    nRep <- length(unique(data$Rep))
+    nRep <- if("Rep"%in%fixed) length(unique(data$Rep))
     CVgi <- sqrt(vA)/Mean*100
     
     if(GxE){
@@ -520,12 +552,24 @@ the function will automatically build Rep:",matGenCol," cross interactions and p
         if(GxE){
           vPhen <- vA + vGxE + vParc + vE
           c2GxE <- vGxE/vPhen
+          
+          if("Rep"%in%fixed){
+            h2m <- (0.25*vA) / (0.25*vA+(vGxE/nEnv)+(vParc/nRep*nEnv)+vE/(nRep*nArv))
+          }else{
+            h2m <- (0.25*vA) / (0.25*vA+(vGxE/nEnv)+(vParc/nEnv)+vE)
+          }
+          
           h2m <- (0.25*vA) / (0.25*vA+(vGxE/nEnv)+(vParc/nRep)+vE/(nRep*nArv))
           genParNames <- c("vA","vGxE","vParc","vE","vPhen","h2a","h2m","h2d",
                            "c2Parc","c2GxE","rgloc","accFam","accInd","CVgi%","CVe%","Mean")
         }else{
           vPhen <- vA + vParc + vE
-          h2m <- (0.25*vA) / (0.25*vA+(vParc/nRep)+vE/(nRep*nArv))
+          
+          if("Rep"%in%fixed){
+            h2m <- (0.25*vA) / (0.25*vA+(vParc/nRep)+vE/(nRep*nArv))
+          }else{
+            h2m <- "There is no block replication"
+          }
           genParNames <- c("vA","vParc","vE","vPhen","h2a","h2m","h2d",
                            "c2Parc","accFam","accInd","CVgi%","CVe%","Mean")
         }
@@ -635,6 +679,7 @@ the function will automatically build Rep:",matGenCol," cross interactions and p
         }
       }
     }
+    
     # Single tree plot
     if(plotType=="STP"){
       CVe = sqrt(0.75*vA+vE)/Mean*100
@@ -643,7 +688,11 @@ the function will automatically build Rep:",matGenCol," cross interactions and p
         if(GxE){
           vPhen <- vA + vGxE + vE
           c2GxE <- vGxE/vPhen
-          h2m <- (0.25*vA) / (0.25*vA+(vGxE/nEnv)+vE/(nRep))
+          if("Rep"%in%fixed){
+            h2m <- (0.25*vA) / (0.25*vA+(vGxE/nEnv)+vE/(nRep))
+          }else{
+            h2m <- (0.25*vA) / (0.25*vA+(vGxE/nEnv)+vE/(nRep))
+          }
           genParNames <- c("vA","vGxE","vE","vPhen","h2a","h2d","h2m","accFam","accInd","c2GxE","rgloc","CVgi%","CVe%","Mean")
         }else{
           vPhen <- vA + vE
@@ -651,8 +700,12 @@ the function will automatically build Rep:",matGenCol," cross interactions and p
         }
         h2a <- vA/vPhen
         h2d <- (0.75*vA) / (0.75*vA+vE)
-        h2m <- (0.25*vA) / (0.25*vA+vE/(nRep))
         
+        if("Rep"%in%fixed){
+          h2m <- (0.25*vA) / (0.25*vA+vE/(nRep))
+        }else{
+          h2m <- "There is no block replicates"
+        }
         if(method=="ai"){
           h2a <- mAdd$funvars["mean",1]
           SEvA <- mAdd$var["genetic",2]
@@ -931,7 +984,7 @@ the function will automatically build Rep:",matGenCol," cross interactions and p
     vG <- mClone$var["clone",1]
     vE <- mClone$var["Residual",1]
     Mean <- mean(data$resp,na.rm=T)
-    nRep <- length(unique(data$Rep))
+    nRep <- if("Rep"%in%fixed) length(unique(data$Rep))
     CVg <- sqrt(vG)/Mean*100
     
     if(GxE){
@@ -949,12 +1002,20 @@ the function will automatically build Rep:",matGenCol," cross interactions and p
         if(GxE){
           vPhen <- vG + vGxE + vParc + vE
           c2GxE <- vGxE/vPhen
-          h2mc <- (vG) / (vG+(vGxE/nEnv)+(vParc/nRep)+vE/(nRep*nArv))
+          if("Rep"%in%fixed){
+            h2mc <- (vG) / (vG+(vGxE/nEnv)+(vParc/nRep)+vE/(nRep*nArv))
+          }else{
+            h2mc <- (vG) / (vG+(vGxE/nEnv)+vE)
+          }
           genParNames <- c("vG","vGxE","vParc","vE","vPhen","h2G","h2mc","c2GxE","c2Parc","rgloc","accClone","CVg%","CVe%","Mean")
           
         }else{
           vPhen <- vG + vParc + vE
-          h2mc <- (vG) / (vG+(vParc/nRep)+vE/(nRep*nArv))
+          if("Rep"%in%fixed){
+            h2mc <- (vG) / (vG+(vParc/nRep)+vE/(nRep*nArv))
+          }else{
+            h2mc <- "There is no block replicates"
+          }
           genParNames <- c("vG","vParc","vE","vPhen","h2G","h2mc","c2Parc","accClone","CVg%","CVe%","Mean")
         }
         c2Parc <- vParc/vPhen
@@ -1098,7 +1159,12 @@ the function will automatically build Rep:",matGenCol," cross interactions and p
         if(GxE){
           vPhen <- vG + vGxE + vE
           c2GxE <- vGxE/vPhen
-          h2mc <- (vG) / (vG+(vGxE/nEnv)+(vE/nRep))
+          if("Rep"%in%fixed){
+            h2mc <- (vG) / (vG+(vGxE/nEnv)+(vE/nRep))
+          }else{
+            h2mc <- (vG) / (vG+(vGxE/nEnv)+vE)
+          }
+          
           genParNames <- c("vG","vGxE","vE","vPhen","h2G","h2mc","c2GxE","rgloc","accClone","CVg%","CVe%","Mean")
         }else{
           vPhen <- vG + vE
@@ -1282,7 +1348,7 @@ the function will automatically build Rep:",matGenCol," cross interactions and p
     # exploratory_analysis -------------------------------------------------
     genParBLUP$expAnalysis$respMeans <- respMeans; if(GxE) genParBLUP$expAnalysis$envMeans <- envMeans; 
     if(any(random=="Proc")||any(fixed=="Proc")) genParBLUP$expAnalysis$procMeans <- procMeans; 
-    genParBLUP$expAnalysis$repMeans <- repMeans; genParBLUP$expAnalysis$cloneMeans <- treatMeans
+    if("Rep"%in%fixed) genParBLUP$expAnalysis$repMeans <- repMeans; genParBLUP$expAnalysis$cloneMeans <- treatMeans
     
     # model_output_and_significance_tests -------------------------------------------------
     genParBLUP$Model$remlMethod <- method; genParBLUP$Model$remlModel <- mClone; genParBLUP$Model$mSig$fixedSig <- anova(mSig)
@@ -1379,7 +1445,7 @@ the function will automatically build Rep:",matGenCol," cross interactions and p
       cat("\n")
     }
     cat("------------------------------------------ Block repetition ----------------------------------\n\n")
-    print(repMeans)
+    if("Rep"%in%fixed) print(repMeans)
     cat("\n")
     cat("--------------------------------------------- Treatment --------------------------------------\n\n")
     print(treatMeans)
