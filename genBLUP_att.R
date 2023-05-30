@@ -16,6 +16,11 @@ genBLUP <- function(data, varResp, repCol, matGenCol, matGen, plotType, fixed = 
   }  
   
   # creating_block_replicates_column ----------------------------------------
+  
+  if(!is.null(repCol)){
+    if(!repCol%in%fixed){
+      stop("ERROR: If you specify the block replicates column at repCol argument, you need to specify it at fixed effects")
+    }}
 
   if(!is.null(repCol)){
     if(repCol%in%fixed){
@@ -29,11 +34,6 @@ genBLUP <- function(data, varResp, repCol, matGenCol, matGen, plotType, fixed = 
   if(!matGen %in% c("family","clone")){
     stop("ERROR: The argument 'matGen' must be 'family' or 'clone'")
   }
-  
-  if(!is.null(repCol)){
-    if(!repCol%in%fixed){
-      stop("ERROR: If you specify the block replicates column at repCol argument, you need to specify it at fixed effects")
-  }}
   
   if(!plotType %in% c("LP","STP")){
     stop("ERROR: The argument 'plotType' must be 'LP' or 'STP'")
