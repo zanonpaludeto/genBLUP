@@ -21,7 +21,7 @@ genBLUP <- function(data, varResp, repCol, matGenCol, matGen, plotType, fixed = 
     if(repCol%in%fixed){
       data$Rep <- data[,repCol]
       fixed <- c("Rep",fixed)
-      fixed <- fixed[-which(fixed==repCol)]
+      fixed <- ifelse(any(duplicated(fixed)),fixed[-which(duplicated(fixed))],fixed[-which(fixed==repCol)])
     }}
   
   # stops and warnings ------------------------------------------------------
