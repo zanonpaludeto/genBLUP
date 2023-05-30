@@ -782,6 +782,8 @@ the function will automatically build Rep:",matGenCol," cross interactions and p
         
         if(method=="ai"){
           h2a <- mAdd$funvars["mean",1]
+          SEvA <- mAdd$var["genetic",2]
+          if(GxE) SEvGxE <- mAdd$var["EnvFam",2]
           SEvRdm1 <- mAdd$var[random[1],2]
           SEvRdm2 <- mAdd$var[random[2],2]
           SEvE <- mAdd$var["Residual",2]
@@ -799,7 +801,8 @@ the function will automatically build Rep:",matGenCol," cross interactions and p
                                              row.names = genParNames),genPar_digits) else 
                                                genPar <- round(data.frame(Estimates=c(vA,vRdm1,vE,vPhen,h2aSE$Estimate,c2Rdm1,c2Rdm1,accFam,accInd,CVgi,CVe,Mean),
                                                                           row.names = genParNames),genPar_digits)
-        }}
+        }
+        }
     }
     genPar[is.na(genPar)] <- " "
     
