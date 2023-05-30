@@ -442,21 +442,21 @@ the function will automatically build Rep:",matGenCol," cross interactions and p
     if(GxE){
       if(is.null(random)){
         lmerModel <- as.formula(paste0(format(fixef)," + ", 
-                                       paste0("(1|", treatment, ")"," + ","(1|", paste0("Env",treatment), ")"))) 
+                                       paste0("(1|", matGen, ")"," + ","(1|", paste0("Env",treatment), ")"))) 
         
       }else{
         lmerModel <- as.formula(paste0(paste0("get(varResp) ~ Env + EnvRep")," + ", 
-                                       paste0("(1|", treatment, ")","+","(1|", paste0("Env",treatment), ") + ")
+                                       paste0("(1|", matGen, ")","+","(1|", paste0("Env",treatment), ") + ")
                                        , paste("(1|", random, collapse=") + "),")"))
       }
     }else{
       if(is.null(random)){
         lmerModel <- as.formula(paste0("get(varResp) ~ ",paste(fixed, collapse=" + ")," + ", 
-                                       paste0("(1|", treatment, ")"))) 
+                                       paste0("(1|", matGen, ")"))) 
         
       }else{
         lmerModel <- as.formula(paste0("get(varResp) ~ ",paste(fixed, collapse=" + ")," + ", 
-                                       paste0("(1|", treatment, ") + ", paste("(1|",random, collapse=") + "),")")))
+                                       paste0("(1|", matGen, ") + ", paste("(1|",random, collapse=") + "),")")))
       }
     }
     suppressMessages(mSig <- lme4::lmer(lmerModel, data=data, control = control))
