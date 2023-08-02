@@ -725,7 +725,7 @@ diallelBLUP <- function(data, varResp, plotType=NULL, envCol=NULL, repCol=NULL, 
     cat("---------------------------------------- Block repetition ------------------------------------\n\n")
     print(repMeans)
     cat("\n")
-    cat("--------------------------------------------- Parent -----------------------------------------\n\n")
+    cat("--------------------------------------------- Crossings -----------------------------------------\n\n")
     print(treatMeans)
     cat("\n")
     if("prov"%in%c(fixed,random)){
