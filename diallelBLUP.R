@@ -448,7 +448,8 @@ diallelBLUP <- function(data, varResp, plotType=NULL, envCol=NULL, repCol=NULL, 
   vGCA <- mCruz$sigmaVector["overlay(dam, sire).resp-resp"]
   vPhen <- mAdd$var %>% as.data.frame() %>% dplyr::select('Estimated variances') %>% sum()
   Mean <- mean(data$resp,na.rm=T)
-  nRep <- length(unique(data[,repCol]))
+  
+  if(!is.null(repCol)) nRep <- length(unique(data[,repCol]))
   
   tmp_gpl_1 <- named.list(vA,vD,vFam,vE) #named list number one (common variance components)
   
@@ -474,7 +475,15 @@ diallelBLUP <- function(data, varResp, plotType=NULL, envCol=NULL, repCol=NULL, 
   
   #additional variance components
   if(length(rownames(mAdd$var))>3){
-    addVc <- as.data.frame(mAdd$var[setdiff(rownames(mAdd$var),c("genetic","dominance","Residual")),])
+    
+    if(length(rownames(mAdd$var))==4){
+      dummyVar <- matrix(data=c(0,0),nrow=1,ncol=2) %>% `rownames<-`("dummyVar")
+      mAdd_var <- rbind(mAdd$var,dummyVar)
+      addVc <- as.data.frame(mAdd_var[setdiff(rownames(mAdd_var),c("genetic","dominance","Residual")),]) %>% 
+        slice_head()
+    }else{
+      addVc <- as.data.frame(mAdd$var[setdiff(rownames(mAdd$var),c("genetic","dominance","Residual")),])
+    }
     
     addVc_list <- list() #list to store additional variance components
     addc2_list <- list() #list to store additional c2
