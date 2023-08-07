@@ -1,11 +1,12 @@
-diallelBLUP <- function(data, varResp, plotType=NULL, envCol=NULL, repCol=NULL, plotCol=NULL, damCol=NULL, sireCol=NULL, crossCol=NULL,
-                        provCol=NULL, fixed = "Rep", random = NULL, method = "ai", GxE = F, PxE = F, excludeControl = NULL, 
-                        gp_digits, codPerc = NULL, optimizeSelection = FALSE, maxIndProgeny = NULL, maxProgenyBlock = NULL, 
-                        excludeCod = NULL, directory = NULL){
+diallelBLUP <- function(data, varResp, plotType=NULL, envCol=NULL, repCol=NULL, plotCol=NULL, 
+                        treeCol = NULL, damCol=NULL, sireCol=NULL, crossCol=NULL,provCol=NULL, 
+                        codCol = NULL, fixed = "Rep", random = NULL, method = "ai", GxE = F, PxE = F, 
+                        excludeControl = NULL, gp_digits, codPerc = NULL, optimizeSelection = FALSE, 
+                        maxIndProgeny = NULL, maxProgenyBlock = NULL, excludeCod = NULL, directory = NULL){
   
   # loading packages --------------------------------------------------------
   
-  pacman::p_load(crayon,lme4,stringr,tidyverse,ggroups,dplyr,msm,breedR)
+  pacman::p_load(crayon,lme4,stringr,tidyverse,ggroups,dplyr,breedR)
   
   # stops and warnings ------------------------------------------------------
   
@@ -21,7 +22,7 @@ diallelBLUP <- function(data, varResp, plotType=NULL, envCol=NULL, repCol=NULL, 
     stop("ERROR: varResp is not numeric, please check your data")
   }
   
-  if(plotType=="LP"&!"Plot"%in%random){
+  if(plotType=="LP"&!plotCol%in%random){
     cat(paste0(bold("WARNING:"), " The plotType argument was set to ", bold(cyan("LP")), " but nothing was especified in ", 
                bold('plotCol'), " argument. The function will build it using rep:cross interactions \n"))
   }
@@ -54,6 +55,30 @@ diallelBLUP <- function(data, varResp, plotType=NULL, envCol=NULL, repCol=NULL, 
   
   #creating Env col if envCol is specified
   if(GxE) data$Env <- data[,envCol]
+  
+  #creating tree column if plotType is LP and treeCol is specified
+  if(plotType=="LP") data$Arv <- data[,treeCol]
+  
+  #creating Cod column
+  if(is.null(codCol)){
+    data$Cod = " "
+  }else{
+    if(codCol %in% colnames(data)&length(codCol)>1){
+      data$Cod <- apply(data[,codCol], 1,paste, collapse = ";")
+    }
+    if(codCol %in% colnames(data)&length(codCol)==1){
+      data$Cod = data[,codCol]
+    }
+  }
+
+  
+  #creating rep:cross interactions if plotCol is not specified when plotType is LP
+  if(plotType=="LP"&!plotCol%in%random){
+    data$Plot <- paste0(data$Rep,"_x_",data$family)
+  }
+  if(plotType=="LP"&plotCol%in%random){
+    data$Plot <- data[,plotCol]
+  }
   
   #changing repCol to "Rep" and adding it in fixed or random (user specified)
   if(!is.null(repCol)){
@@ -117,18 +142,7 @@ diallelBLUP <- function(data, varResp, plotType=NULL, envCol=NULL, repCol=NULL, 
     data <- data %>% filter(!.$family%in%excludeControl)
     cat(paste(c("Controls:", excludeControl , "has been removed using excludeControl argument\n"))) 
   }
-  
-  # Creating Cod and other interactions if it doesn't exist
-  if(!("Cod" %in% colnames(data))){
-    data$Cod = " "
-  }
-  if(all(c("Cod1","Cod2")%in%colnames(data))){
-    data$Cod <- paste0(data$Cod1,";",data$Cod2)
-  }
-  if(plotType=="LP"&!"Plot"%in%random){
-    data$Plot <- paste0(data$Rep,"_x_",data$family)
-  }
-  
+
   if(GxE){
     #creating basic GxE interactions
     data <- data %>% mutate(EnvRep = factor(paste0(Env,"_x_",Rep)))
@@ -227,7 +241,8 @@ diallelBLUP <- function(data, varResp, plotType=NULL, envCol=NULL, repCol=NULL, 
   }else{
     if(plotType=="LP"){  
       data$Ind <- paste0(data$Rep,"-x-",data$sire,"-x-",data$dam,"-x-",data$family,"-x-",data$Plot,"-x-",data$Arv)
-    }else{data$Ind <- paste0(data$Rep,"-x-",data$sire,"-x-",data$dam,"-x-",data$family,"-x-",data$Arv)  
+    }else{
+      data$Ind <- paste0(data$Rep,"-x-",data$sire,"-x-",data$dam,"-x-",data$family,"-x-",data$Arv)  
     }}
   
   if(any(duplicated(data$Ind))){
@@ -441,6 +456,7 @@ diallelBLUP <- function(data, varResp, plotType=NULL, envCol=NULL, repCol=NULL, 
   
   # extracting vc's and calculating genetic parameters ----------------------
   
+  #extracting variance components
   vA <- mAdd$var["genetic",1]
   vD <- mAdd$var["dominance",1]
   vFam <-  as.numeric(mCruz$sigmaVector["family.resp-resp"])
@@ -448,10 +464,6 @@ diallelBLUP <- function(data, varResp, plotType=NULL, envCol=NULL, repCol=NULL, 
   vGCA <- mCruz$sigmaVector["overlay(dam, sire).resp-resp"]
   vPhen <- mAdd$var %>% as.data.frame() %>% dplyr::select('Estimated variances') %>% sum()
   Mean <- mean(data$resp,na.rm=T)
-  
-  if(!is.null(repCol)) nRep <- length(unique(data[,repCol]))
-  
-  tmp_gpl_1 <- named.list(vA,vD,vFam,vE) #named list number one (common variance components)
   
   #calculating basic genetic parameters
   h2a <- vA/vPhen
@@ -461,24 +473,24 @@ diallelBLUP <- function(data, varResp, plotType=NULL, envCol=NULL, repCol=NULL, 
   bakersRatio <- as.numeric(2*vGCA/(2*vGCA+vFam)) #Baker's ratio
   CVgi <- sqrt(vA)/Mean*100
   
-  if(plotType=="STP"){
-    h2m <- (vA+vD) / (vA+vD+vE/(nRep))
-    CVe = sqrt((0.75*vA+vE))/Mean*100
-  }else{
-    nArv <- length(unique(data$Arv))
-    h2m <- (vA+vD) / (vA+vD+(vPlot/nRep)+vE/(nRep*nArv))
-    CVe = (sqrt((0.75*vA+vE)/nArv+vPlot))/Mean*100
-  }
+  #counting number of block replicates if repCol is not NULL
+  if(!is.null(repCol)) nRep <- length(unique(data[,repCol]))
   
-  tmp_gpl_2 <- named.list(h2a,h2G,h2m,h2d) #named list number two (heritabilities)
+  tmp_gpl_1 <- named.list(vA,vD,vFam,vE) #named list number one (common variance components)
   tmp_gpl_3 <- named.list(bakersRatio,c2D) #named list number three (heritabilities)
   
+  #adding SE column if method 'em' to proceed script without errors
+  if(method=="em"){
+    mAdd_var <- mAdd$var %>% as.data.frame() %>% mutate(SE=0)
+  }
+
   #additional variance components
   if(length(rownames(mAdd$var))>3){
     
     if(length(rownames(mAdd$var))==4){
-      dummyVar <- matrix(data=c(0,0),nrow=1,ncol=2) %>% `rownames<-`("dummyVar")
-      mAdd_var <- rbind(mAdd$var,dummyVar)
+      dummyVar <- matrix(data=c(0,0),nrow=1,ncol=2) %>% `rownames<-`("dummyVar") %>% 
+        `colnames<-`(c("Estimated variances","SE"))
+      mAdd_var <- rbind(mAdd_var,dummyVar)
       addVc <- as.data.frame(mAdd_var[setdiff(rownames(mAdd_var),c("genetic","dominance","Residual")),]) %>% 
         slice_head()
     }else{
@@ -504,6 +516,19 @@ diallelBLUP <- function(data, varResp, plotType=NULL, envCol=NULL, repCol=NULL, 
   }else{
     tmp_gpl_1 <- c(tmp_gpl_1,named.list(vPhen))
   }
+  
+  #calculating additional genetic estimates that depends on plotType
+  if(plotType=="STP"){
+    h2m <- (vA+vD) / (vA+vD+vE/(nRep))
+    CVe = sqrt((0.75*vA+vE))/Mean*100
+  }else{
+    vPlot <- get(paste0("v",plotCol))
+    nArv <- length(unique(data$Arv))
+    h2m <- (vA+vD) / (vA+vD+(vPlot/nRep)+vE/(nRep*nArv))
+    CVe = (sqrt((0.75*vA+vE)/nArv+vPlot))/Mean*100
+  }
+  
+  tmp_gpl_2 <- named.list(h2a,h2G,h2m,h2d) #named list number two (heritabilities)
   
   #if GxE
   if(GxE){
