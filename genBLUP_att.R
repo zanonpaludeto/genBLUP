@@ -1,39 +1,13 @@
-genBLUP <- function(data, varResp, repCol, matGenCol, matGen, plotType, fixed = "Rep", random = NULL, method = "ai", GxE = F, PxE = F,
-                    excludeControl = NULL, genPar_digits = 6, codPerc = NULL, optimizeSelection = FALSE, maxIndProgeny = NULL, 
+genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, repCol, matGenCol, matGen, plotType, fixed = "Rep",
+                    codCol = NULL, random = NULL, method = "ai", GxE = F, PxE = F,excludeControl = NULL, genPar_digits = 6, 
+                    codPerc = NULL, optimizeSelection = FALSE, maxIndProgeny = NULL, 
                     maxProgenyBlock = NULL, excludeCod = NULL, directory = NULL){
   
   # loading packages --------------------------------------------------------
   
   pacman::p_load(lme4,stringr,tidyverse,ggroups,dplyr,msm)
   
-  
-  # creating_matGen_column --------------------------------------------------
-  
-  if(matGen=="family"){
-    data$family <- data[,matGenCol]
-  }else{
-    data$clone <- data[,matGenCol]
-  }  
-  
-  # creating_block_replicates_column ----------------------------------------
-  
-  if(!is.null(repCol)){
-    if(!repCol%in%fixed){
-      stop("ERROR: If you specify the block replicates column at repCol argument, you need to specify it at fixed effects")
-    }}
-
-  if(!is.null(repCol)){
-    if(repCol%in%fixed){
-      data$Rep <- data[,repCol]
-      fixed <- c("Rep",fixed)
-      if(any(duplicated(fixed))){
-        fixed <- fixed[-which(duplicated(fixed))]
-      }else{
-        fixed <- fixed[-which(fixed==repCol)]
-      }
-    }}
-  
-  # stops and warnings ------------------------------------------------------
+   # stops and warnings ------------------------------------------------------
   
   if(!matGen %in% c("family","clone")){
     stop("ERROR: The argument 'matGen' must be 'family' or 'clone'")
@@ -55,12 +29,13 @@ genBLUP <- function(data, varResp, repCol, matGenCol, matGen, plotType, fixed = 
     stop("ERROR: You can't optimize individual selection in a clonal analysis")
   }
   
+  if(!is.null(repCol)){
+    if(!repCol%in%fixed){
+      stop("ERROR: If you specify the block replicates column at repCol argument, you need to specify it at fixed effects")
+    }}
+  
   if(optimizeSelection==T&(!is.numeric(maxIndProgeny)|!is.numeric(maxProgenyBlock))){
     stop("ERROR: If you want to optimize selection, please choose numeric parameters for maxIndProgeny and maxProgenyBlock")
-  }
-  if(plotType=="LP"&is.null(random)){
-    cat(paste0("You choose to adjust an LP model without specifying 'Parc' in the random argument, 
-the function will automatically build Rep:",matGenCol," cross interactions and proceed the analysis \n \n"))
   }
   if(PxE&!GxE){
     stop("ERROR: Argument 'GxE' is FALSE. You need to run a GxE analysis to estimate a Provenance x Environment effect")
@@ -77,8 +52,47 @@ the function will automatically build Rep:",matGenCol," cross interactions and p
     optimizeSelection=F
   }
   
-  if(!is.null(excludeControl)&!any(data[,matGen]%in%excludeControl)){
+  if(!is.null(excludeControl)&!any(data[,matGenCol]%in%excludeControl)){
     stop(paste0("ERROR: The specified controls in excludeControl argument are not in the ",matGenCol," column of your dataset"))
+  }
+  
+  # creating_columns --------------------------------------------------------
+  
+  # matGen column
+  if(matGen=="family"){
+    data$family <- data[,matGenCol]
+  }else{
+    data$clone <- data[,matGenCol]
+  }  
+  
+  # block replicates column
+  if(!is.null(repCol)){
+    if(repCol%in%fixed){
+      data$Rep <- data[,repCol]
+      fixed <- c("Rep",fixed)
+      if(any(duplicated(fixed))){
+        fixed <- fixed[-which(duplicated(fixed))]
+      }else{
+        fixed <- fixed[-which(fixed==repCol)]
+      }
+    }}
+  
+  #creating Env col if envCol is specified
+  if(GxE) data$Env <- data[,envCol]
+  
+  #creating tree column if plotType is LP and treeCol is specified
+  if(plotType=="LP") data$Arv <- data[,treeCol]
+  
+  #creating Cod column
+  if(is.null(codCol)){
+    data$Cod = " "
+  }else{
+    if(length(codCol)>1){
+      data$Cod <- apply(data[,codCol], 1,paste, collapse = ";")
+    }
+    if(length(codCol)==1){
+      data$Cod = data[,codCol]
+    }
   }
   
   # messages ----------------------------------------------------------------
@@ -91,27 +105,21 @@ the function will automatically build Rep:",matGenCol," cross interactions and p
     cat("EM-REML algorithm was selected\n")
   }
   
-  # exploratory analysis ----------------------------------------------------
-  
-  # preparing data
+  if(plotType=="LP"&!"Parc"%in%random){
+    cat(paste0("You choose to adjust an LP model without specifying 'Parc' in the random argument, 
+the function will automatically build Rep:",matGenCol," cross interactions and proceed the analysis \n \n"))
+    
+    random <- c(random,"Parc")
+  }
   
   if(!is.null(excludeControl)){
     data <- data %>% filter(!.[,matGen]%in%excludeControl)
     cat(paste(c("Controls:",excludeControl, "has been removed using excludeControl argument\n"))) 
   }
   
-  # Creating Cod if it doesn't exist
-  if(!("Cod" %in% colnames(data))){
-    data$Cod = "."
-  }
-  if(all(c("Cod1","Cod2")%in%colnames(data))){
-    data$Cod <- paste0(data$Cod1,";",data$Cod2)
-  }
+  # exploratory analysis ----------------------------------------------------
   
-  # creating arv column if it doesn't exist
-  if(!"Arv"%in%names(data)){
-    data$Arv <- 1
-  }
+  # preparing data
   
   if(GxE){
     #creating basic GxE interactions
@@ -134,11 +142,10 @@ the function will automatically build Rep:",matGenCol," cross interactions and p
       random <- c(random,"EnvProc")
     }
   }else{
-    if(plotType=="LP"&is.null(random)){
-      random = c(random,"Parc")
+    if(plotType=="LP"&!"Parc"%in%random){
       if("Rep"%in%fixed){
         if(matGen=="family") data <- data %>% mutate(Parc = factor(paste0(Rep,"_x_",family)))
-        if(matGen=="family") data <- data %>% mutate(Parc = factor(paste0(Rep,"_x_",clone)))
+        if(matGen=="clone") data <- data %>% mutate(Parc = factor(paste0(Rep,"_x_",clone)))
       }}}
   
   data <- data %>% arrange(get(matGen))
@@ -185,14 +192,15 @@ the function will automatically build Rep:",matGenCol," cross interactions and p
     suppressMessages(procMeans <- groupMeans(data,"Proc"))
   }
   
-  if(!is.null(codPerc)&any(codPerc%in%data$Cod)){
+  if(!is.null(codPerc)){
     countTreat <- data %>% count(get(matGen)) %>% setNames(c(matGen,"nObs"))
-    suppressMessages(codData <- separate_rows(data,Cod) %>% count(!!as.name(matGen),Cod) %>% filter(Cod!=".") %>% pivot_wider(., names_from = Cod,values_from = n) %>% 
+    suppressMessages(codData <- separate_rows(data,Cod) %>% count(!!as.name(matGen),Cod) %>% filter(Cod!=".") %>% 
+                       pivot_wider(., names_from = Cod,values_from = n) %>% 
                        left_join(countTreat,.) %>% relocate(nObs, .after = last_col()))
     
     for(i in codPerc){
       if(i %in% names(codData)){
-        percCod <- setNames(data.frame(codData[,i]/codData$nObs*100),paste0(i,"%"))
+        percCod <- setNames(data.frame(codData[,i]/codData$nObs*100),paste0(i,"%")) %>% round(.,2)
         codData <- cbind(codData,percCod)
       }
     }
@@ -991,7 +999,11 @@ the function will automatically build Rep:",matGenCol," cross interactions and p
     vG <- mClone$var["clone",1]
     vE <- mClone$var["Residual",1]
     Mean <- mean(data$resp,na.rm=T)
-    nRep <- if("Rep"%in%fixed) length(unique(data$Rep))
+    if("Rep"%in%fixed&GxE){
+      nRep <- length(unique(data$EnvRep))
+    }else{
+      nRep <- length(unique(data$Rep))
+    }
     CVg <- sqrt(vG)/Mean*100
     
     if(GxE){
@@ -1008,6 +1020,8 @@ the function will automatically build Rep:",matGenCol," cross interactions and p
       if(length(random)==1){
         if(GxE){
           vPhen <- vG + vGxE + vParc + vE
+          c2Parc <- vParc/vPhen
+          h2G <- vG/vPhen
           c2GxE <- vGxE/vPhen
           if("Rep"%in%fixed){
             h2mc <- (vG) / (vG+(vGxE/nEnv)+(vParc/nRep)+vE/(nRep*nArv))
@@ -1025,11 +1039,7 @@ the function will automatically build Rep:",matGenCol," cross interactions and p
           }
           genParNames <- c("vG","vParc","vE","vPhen","h2G","h2mc","c2Parc","accClone","CVg%","CVe%","Mean")
         }
-        c2Parc <- vParc/vPhen
-        h2G <- vG/vPhen
-        
-        genParNames <- c("vG","vParc","vE","vPhen","h2G","h2mc","c2Parc","accClone","CVg%","CVe%","Mean")
-        
+
         if(method=="ai"){
           SEvG <- mClone$var["clone",2]
           if(GxE){
