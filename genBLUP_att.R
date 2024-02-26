@@ -1,4 +1,4 @@
-genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, repCol, matGenCol, matGen, plotType, fixed = "Rep",
+genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL, repCol, matGenCol, matGen, plotType, fixed = "Rep",
                     codCol = NULL, random = NULL, method = "ai", GxE = F, PxE = F,excludeControl = NULL, genPar_digits = 6, 
                     codPerc = NULL, optimizeSelection = FALSE, maxIndProgeny = NULL, 
                     maxProgenyBlock = NULL, excludeCod = NULL, directory = NULL){
@@ -83,6 +83,12 @@ genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, repCol, matGenC
   #creating tree column if plotType is LP and treeCol is specified
   if(plotType=="LP") data$Arv <- data[,treeCol]
   
+  #creating "Parc" column if plotCol is specified and plotType is LP
+  if(plotType=="LP"&!is.null(plotCol)){
+    data$Parc <- data[,plotCol]
+    random <- c(random,"Parc")
+  } 
+  
   #creating Cod column
   if(is.null(codCol)){
     data$Cod = " "
@@ -105,9 +111,9 @@ genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, repCol, matGenC
     cat("EM-REML algorithm was selected\n")
   }
   
-  if(plotType=="LP"&!"Parc"%in%random){
-    cat(paste0("You choose to adjust an LP model without specifying 'Parc' in the random argument, 
-the function will automatically build Rep:",matGenCol," cross interactions and proceed the analysis \n \n"))
+  if(plotType=="LP"&is.null(plotCol)){
+    cat(paste0("You choose to adjust an LP model without specifying 'plotCol' argument, 
+the function will automatically build Rep:", matGenCol," cross interactions and proceed the analysis \n \n"))
     
     random <- c(random,"Parc")
   }
@@ -142,13 +148,13 @@ the function will automatically build Rep:",matGenCol," cross interactions and p
       random <- c(random,"EnvProc")
     }
   }else{
-    if(plotType=="LP"&!"Parc"%in%random){
+    if(plotType=="LP"&"Parc"%in%random&is.null(plotCol)){
       if("Rep"%in%fixed){
         if(matGen=="family") data <- data %>% mutate(Parc = factor(paste0(Rep,"_x_",family)))
         if(matGen=="clone") data <- data %>% mutate(Parc = factor(paste0(Rep,"_x_",clone)))
       }}}
   
-  data <- data %>% arrange(get(matGen))
+  data <- data %>% arrange(get(matGenCol))
   
   resp <- data[,which(names(data)==varResp)]
   data$resp <- resp
@@ -193,8 +199,8 @@ the function will automatically build Rep:",matGenCol," cross interactions and p
   }
   
   if(!is.null(codPerc)){
-    countTreat <- data %>% count(get(matGen)) %>% setNames(c(matGen,"nObs"))
-    suppressMessages(codData <- separate_rows(data,Cod) %>% count(!!as.name(matGen),Cod) %>% filter(Cod!=".") %>% 
+    countTreat <- data %>% dplyr::count(across(!!matGen)) %>% setNames(c(matGen,"nObs"))
+    suppressMessages(codData <- separate_rows(data,Cod) %>% dplyr::count(across(!!matGen),Cod) %>% filter(Cod!=".") %>% 
                        pivot_wider(., names_from = Cod,values_from = n) %>% 
                        left_join(countTreat,.) %>% relocate(nObs, .after = last_col()))
     
@@ -252,28 +258,28 @@ the function will automatically build Rep:",matGenCol," cross interactions and p
     if(GxE){
       if("sire"%in%names(data)){
         if(plotType=="LP"){  
-          data$Ind <- paste0(data$seq,"-x-",data$Env,"-x-",data$Rep,"-x-",data$sire,"-x-",data[,names(data) %in% matGen],"-x-",data$Parc,"-x-",data$Arv)
+          data$Ind <- paste(data$seq,data$Env,data$Rep,data$sire,data[,names(data) %in% matGen],data$Parc,data$Arv, sep = "-x-")
         }else{
-          data$Ind <- paste0(data$seq,"-x-",data$Env,"-x-",data$Rep,"-x-",data$sire,"-x-",data[,names(data) %in% matGen],"-x-",data$Arv)  
+          data$Ind <- paste(data$seq,data$Env,data$Rep,data$sire,data[,names(data) %in% matGen],data$Arv, sep = "-x-")  
         }
       }else{
         if(plotType=="LP"){  
-          data$Ind <- paste0(data$seq,"-x-",data$Env,"-x-",data$Rep,"-x-",data[,names(data) %in% matGen],"-x-",data$Parc,"-x-",data$Arv)
+          data$Ind <- paste(data$seq,data$Env,data$Rep,data[,names(data) %in% matGen],data$Parc,data$Arv, sep = "-x-")
         }else{
-          data$Ind <- paste0(data$seq,"-x-",data$Env,"-x-",data$Rep,"-x-",data[,names(data) %in% matGen],"-x-",data$Arv)  
+          data$Ind <- paste(data$seq,data$Env,data$Rep,data[,names(data) %in% matGen],data$Arv, sep = "-x-")  
         }
       }
       
     }else{
       if("sire"%in%names(data)){
         if(plotType=="LP"){  
-          data$Ind <- paste0(data$seq,"-x-",data$Rep,"-x-",data$sire,"-x-",data[,names(data) %in% matGen],"-x-",data$Parc,"-x-",data$Arv)
-        }else{data$Ind <- paste0(data$seq,"-x-",data$Rep,"-x-",data$sire,"-x-",data[,names(data) %in% matGen],"-x-",data$Arv)  
+          data$Ind <- paste(data$seq,data$Rep,data$sire,data[,names(data) %in% matGen],data$Parc,data$Arv, sep = "-x-")
+        }else{data$Ind <- paste(data$seq,data$Rep,data$sire,data[,names(data) %in% matGen],data$Arv, sep = "-x-")  
         }
       }else{
         if(plotType=="LP"){  
-          data$Ind <- paste0(data$seq,"-x-",data$Rep,"-x-",data[,names(data) %in% matGen],"-x-",data$Parc,"-x-",data$Arv)
-        }else{data$Ind <- paste0(data$seq,"-x-",data$Rep,"-x-",data[,names(data) %in% matGen],"-x-",data$Arv)  
+          data$Ind <- paste(data$seq,data$Rep,data[,names(data) %in% matGen],data$Parc,data$Arv, sep = "-x-")
+        }else{data$Ind <- paste(data$seq,data$Rep,data[,names(data) %in% matGen],data$Arv, sep = "-x-")  
         }
       }}
     
@@ -991,7 +997,7 @@ the function will automatically build Rep:",matGenCol," cross interactions and p
     
     r2Clone <- mClone$ranef$clone[[1]] %>% 
       mutate(r2=1-(s.e./2)^2/(diag(diag(length(mClone$ranef$clone[[1]][,1])))*as.data.frame(mClone$var)["clone",1])) %>% 
-      rownames_to_column("clone") %>% rename(g = value)
+      rownames_to_column("clone") %>% dplyr::rename(g = value)
     
     accClone <- mean(sqrt(1-((r2Clone$s.e.)^2)/(mClone$var["clone",1])), na.rm=T)
     
@@ -1340,17 +1346,19 @@ the function will automatically build Rep:",matGenCol," cross interactions and p
       
       # MHVG
       n <- table(plyr::ldply(geBLUP, data.frame)[,-1]$clone) %>% as.data.frame
-      dataMHVG <- plyr::ldply(geBLUP, data.frame)[,-1] %>% group_by(clone) %>% summarise(MHVG=sum(1/g.ge.u)) %>% left_join(.,n,by=c("clone"="Var1")) %>% 
+      dataMHVG <- plyr::ldply(geBLUP, data.frame)[,-1] %>% group_by(clone) %>% 
+        dplyr::summarise(MHVG=sum(1/g.ge.u)) %>% left_join(.,n,by=c("clone"="Var1")) %>% 
         mutate(MHVG=Freq/MHVG) %>% dplyr::select(-Freq)
       
       # PRVG
       dataPRVG <- plyr::ldply(geBLUP, data.frame)[,-1] %>% left_join(.,envMeans[,c(1:2)],by="Env") %>% 
         mutate(Mean=as.numeric(Mean),prvgIndex=.[,4]/Mean) %>% dplyr::select(-5) %>% group_by(clone) %>% 
-        summarise(PRVG=mean(prvgIndex)) %>% mutate(PRVG=PRVG*Mean)
+        dplyr::summarise(PRVG=mean(prvgIndex)) %>% mutate(PRVG=PRVG*Mean)
       
       # MHPRVG
       dataMHPRVG <- plyr::ldply(geBLUP, data.frame)[,-1] %>% left_join(.,envMeans[,c(1:2)],by="Env") %>% 
-        mutate(Mean=as.numeric(Mean),prvgIndex=1/(.[,4]/Mean)) %>% group_by(clone) %>% summarise(MHPRVG=sum(prvgIndex)) %>% 
+        mutate(Mean=as.numeric(Mean),prvgIndex=1/(.[,4]/Mean)) %>% group_by(clone) %>% 
+        dplyr::summarise(MHPRVG=sum(prvgIndex)) %>% 
         left_join(.,n,by=c("clone"="Var1")) %>% mutate(MHPRVG=Freq/MHPRVG*Mean) %>% 
         dplyr::select(-Freq)
       
