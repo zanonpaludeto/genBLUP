@@ -477,7 +477,7 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
                                        paste0("(1|", matGen, ") + ", paste("(1|",random, collapse=") + "),")")))
       }
     }
-    suppressMessages(mSig <- lme4::lmer(lmerModel, data=data, control = control))
+    suppressMessages(mSig <- lmerTest::lmer(lmerModel, data=data, control = control))
     
     if(!exists("mAdd")&!exists("mClone")){
       cat("AI-REML algorithm got an error, switching to EM-REML\n")
