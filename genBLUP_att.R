@@ -5,7 +5,7 @@ genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL,
   
   # loading packages --------------------------------------------------------
   
-  pacman::p_load(lme4,stringr,tidyverse,ggroups,dplyr,msm)
+  pacman::p_load(lme4,stringr,tidyverse,ggroups,dplyr,msm,lmerTest)
   
    # stops and warnings ------------------------------------------------------
   
