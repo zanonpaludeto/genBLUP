@@ -1,5 +1,6 @@
-genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL, repCol, matGenCol, matGen, plotType, fixed = "Rep",
-                    codCol = NULL, random = NULL, method = "ai", GxE = F, PxE = F,excludeControl = NULL, genPar_digits = 6, 
+genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL, repCol, matGenCol, matGen, provCol = NULL, 
+                    plotType, fixed = "Rep",codCol = NULL, random = NULL, method = "ai", GxE = F, PxE = F, 
+                    excludeControl = NULL, genPar_digits = 6, 
                     codPerc = NULL, optimizeSelection = FALSE, maxIndProgeny = NULL, 
                     maxProgenyBlock = NULL, excludeCod = NULL, directory = NULL){
   
@@ -32,6 +33,11 @@ genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL,
   if(!is.null(repCol)){
     if(!repCol%in%fixed){
       stop("ERROR: If you specify the block replicates column at repCol argument, you need to specify it at fixed effects")
+    }}
+  
+  if(!is.null(provCol)){
+    if(!provCol%in%fixed&!provCol%in%random){
+      stop("ERROR: If you specify a provenance effect column at provCol argument, you need to specify it at fixed or random effects")
     }}
   
   if(optimizeSelection==T&(!is.numeric(maxIndProgeny)|!is.numeric(maxProgenyBlock))){
@@ -88,6 +94,22 @@ genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL,
     data$Parc <- data[,plotCol]
     random <- c(random,"Parc")
   } 
+  
+  #creating provenance column if 'provCol' is specified
+  if(!is.null(provCol)){
+    data$Proc <- data[,provCol]
+    
+    #correcting fixed effects if provCol is in fixed
+    if(provCol%in%fixed){
+      fixed <- fixed[-which(fixed==provCol)]
+      fixed <- c(fixed,"Proc")
+    }
+    #correcting random effects if provCol is in fixed
+    if(provCol%in%random){
+      random <- random[-which(random==provCol)]
+      random <- c(random,"Proc")
+    }
+  }
   
   #creating Cod column
   if(is.null(codCol)){
