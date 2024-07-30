@@ -22,7 +22,7 @@ diallelBLUP <- function(data, varResp, plotType=NULL, envCol=NULL, repCol=NULL, 
     stop("ERROR: varResp is not numeric, please check your data")
   }
   
-  if(plotType=="LP"&!plotCol%in%random){
+  if(plotType=="LP"&is.null(plotCol)){
     cat(paste0(bold("WARNING:"), " The plotType argument was set to ", bold(cyan("LP")), " but nothing was especified in ", 
                bold('plotCol'), " argument. The function will build it using rep:cross interactions \n"))
   }
@@ -70,15 +70,6 @@ diallelBLUP <- function(data, varResp, plotType=NULL, envCol=NULL, repCol=NULL, 
       data$Cod = data[,codCol]
     }
   }
-
-  
-  #creating rep:cross interactions if plotCol is not specified when plotType is LP
-  if(plotType=="LP"&!plotCol%in%random){
-    data$Plot <- paste0(data$Rep,"_x_",data$family)
-  }
-  if(plotType=="LP"&plotCol%in%random){
-    data$Plot <- data[,plotCol]
-  }
   
   #changing repCol to "Rep" and adding it in fixed or random (user specified)
   if(!is.null(repCol)){
@@ -97,6 +88,14 @@ diallelBLUP <- function(data, varResp, plotType=NULL, envCol=NULL, repCol=NULL, 
       }else{
         random <- random[-which(random==repCol)]
       }}
+  }
+  
+  #creating rep:cross interactions if plotCol is not specified when plotType is LP
+  if(plotType=="LP"&is.null(plotCol)){
+    data$Plot <- paste0(data$Rep,"_x_",data$family)
+  }
+  if(plotType=="LP"&!is.null(plotCol)){
+    data$Plot <- data[,plotCol]
   }
   
   #changing provCol to "prov" and adding it in fixed or random (user specified)
@@ -201,7 +200,9 @@ diallelBLUP <- function(data, varResp, plotType=NULL, envCol=NULL, repCol=NULL, 
   
   if(!is.null(codPerc)){
     countTreat <- data %>% count(family) %>% setNames(c("family","nObs"))
-    suppressMessages(codData <- separate_rows(data,Cod) %>% count(family,Cod) %>% filter(Cod!=".") %>% pivot_wider(., names_from = Cod,values_from = n) %>% 
+    suppressMessages(codData <- separate_rows(data,Cod) %>% 
+                       dplyr::count(family,Cod) %>% filter(Cod!=".") %>% 
+                       pivot_wider(., names_from = Cod,values_from = n) %>% 
                        left_join(countTreat,.) %>% relocate(nObs, .after = last_col()))
     nCod <- ncol(codData)+1
     
@@ -236,17 +237,22 @@ diallelBLUP <- function(data, varResp, plotType=NULL, envCol=NULL, repCol=NULL, 
     if(plotType=="LP"){  
       data$Ind <- paste0(data$Env,"-x-",data$Rep,"-x-",data$sire,"-x-",data$dam,"-x-",data$family,"-x-",data$Plot,"-x-",data$Arv)
     }else{
-      data$Ind <- paste0(data$Env,"-x-",data$Rep,"-x-",data$sire,"-x-",data$dam,"-x-",data$family,"-x-",data$Arv)  
+      data$Ind <- paste0(data$Env,"-x-",data$Rep,"-x-",data$sire,"-x-",data$dam,"-x-",data$family)  
     }
   }else{
     if(plotType=="LP"){  
       data$Ind <- paste0(data$Rep,"-x-",data$sire,"-x-",data$dam,"-x-",data$family,"-x-",data$Plot,"-x-",data$Arv)
     }else{
-      data$Ind <- paste0(data$Rep,"-x-",data$sire,"-x-",data$dam,"-x-",data$family,"-x-",data$Arv)  
+      data$Ind <- paste0(data$Rep,"-x-",data$sire,"-x-",data$dam,"-x-",data$family)  
     }}
   
   if(any(duplicated(data$Ind))){
-    stop("There are duplicated individuals in your data, please check it")
+    warning("There are duplicated individuals in your data, a numeric sequence was added to each individual
+            coding to proceed with the analysis. Please check your data, since repeated individuals are not usual and 
+            may represent a concern.")
+    
+    data$seq <- seq(1:nrow(data))
+    data$Ind <- paste0(data$seq,"-x-",data$Ind)
   }
   
   # pedigree ----------------------------------------------------------------
@@ -573,18 +579,37 @@ diallelBLUP <- function(data, varResp, plotType=NULL, envCol=NULL, repCol=NULL, 
   
   # Individual_BLUP_genetic_gain_and_effectve_population_size --------------- 
   
-  if(GxE){
-    indBLUP <- data %>% left_join(.,r2Ind[,1:2],by="Ind") %>% 
-      {if ("prov"%in%random||"prov"%in%fixed) dplyr::select(.,prov,Ind,resp,a,Cod) else dplyr::select(.,Ind,resp,a,Cod)} %>% rename(f=resp) %>%
-      mutate("u+a" = Mean+a, d=mAdd$ranef$dominance[[1]][,1], g=a+d) %>% 
-      {if (plotType=="LP") separate(.,Ind,c("Env","Block","Sire","Dam","Cross","Plot","Tree"),  sep="-x-") else 
-        separate(.,Ind,c("Env","Block","Sire","Dam","Cross","Tree"), sep="-x-")} %>% drop_na() %>% arrange(desc(a)) %>% relocate(Cod,.after = last_col())
+  if(any(duplicated(data$Ind))){
+    if(GxE){
+      indBLUP <- data %>% left_join(.,r2Ind[,1:2],by="Ind") %>% 
+        {if ("prov"%in%random||"prov"%in%fixed) dplyr::select(.,prov,Ind,resp,a,Cod) else dplyr::select(.,Ind,resp,a,Cod)} %>% rename(f=resp) %>%
+        mutate("u+a" = Mean+a, d=mAdd$ranef$dominance[[1]][,1], g=a+d) %>% 
+        {if (plotType=="LP") separate(.,Ind,c("Seq","Env","Block","Sire","Dam","Cross","Plot","Tree"),  sep="-x-") else 
+          separate(.,Ind,c("Seq","Env","Block","Sire","Dam","Cross","Tree"), sep="-x-")} %>% drop_na() %>% 
+        arrange(desc(a)) %>% relocate(Cod,.after = last_col()) %>% dplyr::select(-Seq)
+    }else{
+      indBLUP <- data %>% left_join(.,r2Ind[,1:2],by="Ind") %>% 
+        {if ("prov"%in%random||"prov"%in%fixed) dplyr::select(.,prov,Ind,resp,a,Cod) else dplyr::select(.,Ind,resp,a,Cod)} %>% 
+        rename(f=resp) %>%
+        mutate("u+a" = Mean+a, d=mAdd$ranef$dominance[[1]][,1], g=a+d) %>% 
+        {if (plotType=="LP") separate(.,Ind,c("Seq","Block","Sire","Dam","Cross","Plot","Tree"),  sep="-x-") else 
+          separate(.,Ind,c("Seq","Block","Sire","Dam","Cross"), sep="-x-")} %>% drop_na() %>% arrange(desc(a)) %>% 
+        relocate(Cod,.after = last_col()) %>% dplyr::select(-Seq)
+    }
   }else{
-    indBLUP <- data %>% left_join(.,r2Ind[,1:2],by="Ind") %>% 
-      {if ("prov"%in%random||"prov"%in%fixed) dplyr::select(.,prov,Ind,resp,a,Cod) else dplyr::select(.,Ind,resp,a,Cod)} %>% rename(f=resp) %>%
-      mutate("u+a" = Mean+a, d=mAdd$ranef$dominance[[1]][,1], g=a+d) %>% 
-      {if (plotType=="LP") separate(.,Ind,c("Block","Sire","Dam","Cross","Plot","Tree"),  sep="-x-") else 
-        separate(.,Ind,c("Block","Sire","Dam","Cross","Tree"), sep="-x-")} %>% drop_na() %>% arrange(desc(a)) %>% relocate(Cod,.after = last_col())
+    if(GxE){
+      indBLUP <- data %>% left_join(.,r2Ind[,1:2],by="Ind") %>% 
+        {if ("prov"%in%random||"prov"%in%fixed) dplyr::select(.,prov,Ind,resp,a,Cod) else dplyr::select(.,Ind,resp,a,Cod)} %>% rename(f=resp) %>%
+        mutate("u+a" = Mean+a, d=mAdd$ranef$dominance[[1]][,1], g=a+d) %>% 
+        {if (plotType=="LP") separate(.,Ind,c("Env","Block","Sire","Dam","Cross","Plot","Tree"),  sep="-x-") else 
+          separate(.,Ind,c("Env","Block","Sire","Dam","Cross","Tree"), sep="-x-")} %>% drop_na() %>% arrange(desc(a)) %>% relocate(Cod,.after = last_col())
+    }else{
+      indBLUP <- data %>% left_join(.,r2Ind[,1:2],by="Ind") %>% 
+        {if ("prov"%in%random||"prov"%in%fixed) dplyr::select(.,prov,Ind,resp,a,Cod) else dplyr::select(.,Ind,resp,a,Cod)} %>% rename(f=resp) %>%
+        mutate("u+a" = Mean+a, d=mAdd$ranef$dominance[[1]][,1], g=a+d) %>% 
+        {if (plotType=="LP") separate(.,Ind,c("Block","Sire","Dam","Cross","Plot","Tree"),  sep="-x-") else 
+          separate(.,Ind,c("Block","Sire","Dam","Cross","Tree"), sep="-x-")} %>% drop_na() %>% arrange(desc(a)) %>% relocate(Cod,.after = last_col())
+    }
   }
   
   # Provenance BLUP
