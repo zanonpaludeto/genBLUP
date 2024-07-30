@@ -63,10 +63,10 @@ diallelBLUP <- function(data, varResp, plotType=NULL, envCol=NULL, repCol=NULL, 
   if(is.null(codCol)){
     data$Cod = " "
   }else{
-    if(codCol %in% colnames(data)&length(codCol)>1){
+    if(length(codCol)>1){
       data$Cod <- apply(data[,codCol], 1,paste, collapse = ";")
     }
-    if(codCol %in% colnames(data)&length(codCol)==1){
+    if(length(codCol)==1){
       data$Cod = data[,codCol]
     }
   }
@@ -91,11 +91,13 @@ diallelBLUP <- function(data, varResp, plotType=NULL, envCol=NULL, repCol=NULL, 
   }
   
   #creating rep:cross interactions if plotCol is not specified when plotType is LP
-  if(plotType=="LP"&is.null(plotCol)){
-    data$Plot <- paste0(data$Rep,"_x_",data$family)
-  }
-  if(plotType=="LP"&!is.null(plotCol)){
-    data$Plot <- data[,plotCol]
+  if(plotType=="LP"){
+    random <- c(random,"Plot")
+    if(is.null(plotCol)){
+      data$Plot <- paste0(data$Rep,"_x_",data$family)
+    }else{
+      data$Plot <- data[,plotCol]
+    }
   }
   
   #changing provCol to "prov" and adding it in fixed or random (user specified)
@@ -528,7 +530,7 @@ diallelBLUP <- function(data, varResp, plotType=NULL, envCol=NULL, repCol=NULL, 
     h2m <- (vA+vD) / (vA+vD+vE/(nRep))
     CVe = sqrt((0.75*vA+vE))/Mean*100
   }else{
-    vPlot <- get(paste0("v",plotCol))
+    vPlot <- mAdd$var["Plot",1]
     nArv <- length(unique(data$Arv))
     h2m <- (vA+vD) / (vA+vD+(vPlot/nRep)+vE/(nRep*nArv))
     CVe = (sqrt((0.75*vA+vE)/nArv+vPlot))/Mean*100
