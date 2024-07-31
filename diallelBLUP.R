@@ -498,7 +498,7 @@ diallelBLUP <- function(data, varResp, plotType=NULL, envCol=NULL, repCol=NULL, 
     if(length(rownames(mAdd$var))==4){
       dummyVar <- matrix(data=c(0,0),nrow=1,ncol=2) %>% `rownames<-`("dummyVar") %>% 
         `colnames<-`(c("Estimated variances","SE"))
-      mAdd_var <- rbind(mAdd_var,dummyVar)
+      mAdd_var <- rbind(mAdd$var,dummyVar)
       addVc <- as.data.frame(mAdd_var[setdiff(rownames(mAdd_var),c("genetic","dominance","Residual")),]) %>% 
         slice_head()
     }else{
