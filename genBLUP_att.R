@@ -476,7 +476,6 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
       })
     
     #significance of effects
-    
     treatment <- ifelse(matGen=="clone","Clone","Fam")
     
     if(GxE){
@@ -1060,6 +1059,8 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
           
         }else{
           vPhen <- vG + vParc + vE
+          c2Parc <- vParc/vPhen
+          h2G <- vG/vPhen
           if("Rep"%in%fixed){
             h2mc <- (vG) / (vG+(vParc/nRep)+vE/(nRep*nArv))
           }else{
