@@ -31,30 +31,37 @@ genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL,
   }
   
   if(!is.null(repCol)){
-    if(!repCol%in%fixed){
-      stop("ERROR: If you specify the block replicates column at repCol argument, you need to specify it at fixed effects")
+    if(!repCol%in%fixed&!repCol%in%random){
+      stop("ERROR: If you specify the block replicates column at repCol argument, you need 
+           to specify it at fixed or random effects")
     }}
   
   if(!is.null(provCol)){
     if(!provCol%in%fixed&!provCol%in%random){
-      stop("ERROR: If you specify a provenance effect column at provCol argument, you need to specify it at fixed or random effects")
+      stop("ERROR: If you specify a provenance effect column at provCol argument, you need 
+           to specify it at fixed or random effects")
     }}
   
   if(optimizeSelection==T&(!is.numeric(maxIndProgeny)|!is.numeric(maxProgenyBlock))){
-    stop("ERROR: If you want to optimize selection, please choose numeric parameters for maxIndProgeny and maxProgenyBlock")
+    stop("ERROR: If you want to optimize selection, please choose numeric parameters for 
+         maxIndProgeny and maxProgenyBlock")
   }
   if(PxE&!GxE){
-    stop("ERROR: Argument 'GxE' is FALSE. You need to run a GxE analysis to estimate a Provenance x Environment effect")
+    stop("ERROR: Argument 'GxE' is FALSE. You need to run a GxE analysis to estimate a 
+         Provenance x Environment effect")
   }
   if(PxE&!"Proc" %in% random){
-    stop("ERROR: To estimate a Provenance x Environment effect, you need to specify 'Proc' in the random argument")
+    stop("ERROR: To estimate a Provenance x Environment effect, you need to specify 
+         'Proc' in the random argument")
   }
   if("Proc"%in%random & !"Proc"%in%names(data)){
-    stop("ERROR: You cannot try to estimate provenance effect without a column names 'Proc' in your data")
+    stop("ERROR: You cannot try to estimate provenance effect without a column names 
+         'Proc' in your data")
   }
   
   if(optimizeSelection&GxE){
-    warning("WARNING: You can't optimize selection in a GxE analysis, the argument was changed to FALSE")
+    warning("WARNING: You can't optimize selection in a GxE analysis, the argument was 
+            changed to FALSE")
     optimizeSelection=F
   }
   
@@ -71,7 +78,7 @@ genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL,
     data$clone <- data[,matGenCol]
   }  
   
-  # block replicates column
+  # block replicates column (fixed)
   if(!is.null(repCol)){
     if(repCol%in%fixed){
       data$Rep <- data[,repCol]
@@ -80,6 +87,18 @@ genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL,
         fixed <- fixed[-which(duplicated(fixed))]
       }else{
         fixed <- fixed[-which(fixed==repCol)]
+      }
+    }}
+  
+  # block replicates column (random)
+  if(!is.null(repCol)){
+    if(repCol%in%random){
+      data$Rep <- data[,repCol]
+      random <- c("Rep",random)
+      if(any(duplicated(random))){
+        random <- random[-which(duplicated(random))]
+      }else{
+        random <- random[-which(random==repCol)]
       }
     }}
   
@@ -93,7 +112,7 @@ genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL,
   if(plotType=="LP"&!is.null(plotCol)){
     data$Parc <- data[,plotCol]
     random <- c(random,"Parc")
-  } 
+  }
   
   #creating provenance column if 'provCol' is specified
   if(!is.null(provCol)){
@@ -104,7 +123,7 @@ genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL,
       fixed <- fixed[-which(fixed==provCol)]
       fixed <- c(fixed,"Proc")
     }
-    #correcting random effects if provCol is in fixed
+    #correcting random effects if provCol is in random
     if(provCol%in%random){
       random <- random[-which(random==provCol)]
       random <- c(random,"Proc")
@@ -135,7 +154,8 @@ genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL,
   
   if(plotType=="LP"&is.null(plotCol)){
     cat(paste0("You choose to adjust an LP model without specifying 'plotCol' argument, 
-the function will automatically build Rep:", matGenCol," cross interactions and proceed the analysis \n \n"))
+               the function will automatically build Rep:", matGenCol," cross interactions 
+               and proceed the analysis \n \n"))
     
     random <- c(random,"Parc")
   }
@@ -151,7 +171,7 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
   
   if(GxE){
     #creating basic GxE interactions
-    if("Rep"%in%fixed){
+    if("Rep"%in%fixed|"Rep"%in%random){
       data <- data %>% mutate(EnvRep = factor(paste0(Env,"_x_",Rep)))
     }
     if(matGen=="family"){
@@ -207,11 +227,11 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
   }
   suppressMessages(treatMeans <- groupMeans(data,matGenCol))
   
-  suppressMessages(if("Rep"%in%fixed) repMeans <- groupMeans(data,"Rep"))
+  suppressMessages(if("Rep"%in%fixed|"Rep"%in%random) repMeans <- groupMeans(data,"Rep"))
   
   if(GxE){
     envMeans <- groupMeans(data,"Env")
-    if("Rep"%in%fixed){
+    if("Rep"%in%fixed|"Rep"%in%random){
       repMeans <- groupMeans(data,"EnvRep") %>% separate(.,EnvRep, into = c("Env","Rep"), sep="_x_")
     }
   }
@@ -280,7 +300,8 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
     if(GxE){
       if("sire"%in%names(data)){
         if(plotType=="LP"){  
-          data$Ind <- paste(data$seq,data$Env,data$Rep,data$sire,data[,names(data) %in% matGen],data$Parc,data$Arv, sep = "-x-")
+          data$Ind <- paste(data$seq,data$Env,data$Rep,data$sire,data[,names(data) %in% matGen],data$Parc,data$Arv, 
+                            sep = "-x-")
         }else{
           data$Ind <- paste(data$seq,data$Env,data$Rep,data$sire,data[,names(data) %in% matGen],data$Arv, sep = "-x-")  
         }
@@ -315,11 +336,13 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
       uniqueGD <- length(na.omit(unique(data$GD)))
       nGD <- data.frame(GD = unique(na.omit(data$GD)), nGD = seq(1,uniqueGD))
       uniqueSire <- length(na.omit(unique(data$sire)))
-      nSire <- data.frame(sire = unique(na.omit(data$sire)), nSire = seq(uniqueGD+1,uniqueGD+uniqueSire))
+      nSire <- data.frame(sire = unique(na.omit(data$sire)), 
+                          nSire = seq(uniqueGD+1,uniqueGD+uniqueSire))
       
       ancPed <- data.frame(idNum=c(nGD$nGD,nSire$nSire),sire=0,dam=0)
       
-      nFamily <- data.frame(family = sort(unique(data$family)), nFamily = as.numeric(seq(uniqueGD+uniqueSire+1,uniqueFam+uniqueGD+uniqueSire)))
+      nFamily <- data.frame(family = sort(unique(data$family)), 
+                            nFamily = as.numeric(seq(uniqueGD+uniqueSire+1,uniqueFam+uniqueGD+uniqueSire)))
     }
     if(!"GD"%in%names(data)&"sire"%in%names(data)){
       
@@ -330,7 +353,8 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
       
       ancPed <- data.frame(idNum=nSire$nSire,sire=0,dam=0)
       
-      nFamily <- data.frame(family = sort(unique(data$family)), nFamily = as.numeric(seq(uniqueSire+1,uniqueFam+uniqueSire)))
+      nFamily <- data.frame(family = sort(unique(data$family)), 
+                            nFamily = as.numeric(seq(uniqueSire+1,uniqueFam+uniqueSire)))
     }
     if("GD"%in%names(data)&!"sire"%in%names(data)){
       
@@ -341,10 +365,12 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
       
       ancPed <- data.frame(idNum=nGD$nGD,sire=0,dam=0)
       
-      nFamily <- data.frame(family = sort(unique(data$family)), nFamily = as.numeric(seq(uniqueGD+1,uniqueFam+uniqueGD)))
+      nFamily <- data.frame(family = sort(unique(data$family)), 
+                            nFamily = as.numeric(seq(uniqueGD+1,uniqueFam+uniqueGD)))
     }
     if(!"GD"%in%names(data)&!"sire"%in%names(data)){
-      nFamily <- data.frame(family = sort(unique(data$family)), nFamily = as.numeric(seq(1,uniqueFam)))
+      nFamily <- data.frame(family = sort(unique(data$family)), 
+                            nFamily = as.numeric(seq(1,uniqueFam)))
     }
     
     nInd <- seq(1001,1000+nrow(data))
@@ -355,20 +381,25 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
       
       if("sire"%in%names(data)){
         data <- dplyr::left_join(data,nSire,by="sire")
-        ped <- data.frame(pedData,sire=data$nSire) %>% setNames(c("idNum","dam","sire")) %>% relocate(dam, .after = sire)
+        ped <- data.frame(pedData,sire=data$nSire) %>% setNames(c("idNum","dam","sire")) %>% 
+          relocate(dam, .after = sire)
       }else{
-        ped <- data.frame(pedData,sire=0) %>% setNames(c("idNum","dam","sire")) %>% relocate(dam, .after = sire)
+        ped <- data.frame(pedData,sire=0) %>% setNames(c("idNum","dam","sire")) %>% 
+          relocate(dam, .after = sire)
       }
       
       #pedigree with grand dam information
       if(any(names(data)=="GD")){
         
-        dfGD <- data[c("nFamily","GD")] %>% group_by(nFamily) %>% distinct() %>% arrange(nFamily)
+        dfGD <- data[c("nFamily","GD")] %>% group_by(nFamily) %>% distinct() %>% 
+          arrange(nFamily)
         if(nrow(dfGD)>nrow(nFamily)){
-          stop("ERROR: There is families with more than one grandparent assisgned in the dataset, please check your data")
+          stop("ERROR: There is families with more than one grandparent assisgned 
+               in the dataset, please check your data")
         }
-        ped <- dfGD %>% left_join(.,nGD, by="GD") %>% dplyr::select(-GD) %>% mutate(sire=0, .after = nFamily) %>% 
-          setNames(c("idNum","sire","dam")) %>% bind_rows(ancPed,.,ped)
+        ped <- dfGD %>% left_join(.,nGD, by="GD") %>% dplyr::select(-GD) %>% 
+          mutate(sire=0, .after = nFamily) %>% setNames(c("idNum","sire","dam")) %>% 
+          bind_rows(ancPed,.,ped)
       }
       
       if(any(duplicated(ped[,1])==TRUE)){
@@ -381,58 +412,58 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
     
     ped <- breedR.createPed(data[,c("idNum","nFamily")])
     
-    # dominance matrix --------------------------------------------------------
-    
-    # if(dominance==TRUE){
-    # 
-    #   A <- buildA(ped)
-    #   D <- ggroups::buildD(ped,A)
-    #     if(any(duplicated(rownames(D))==TRUE)){
-    #       stop("ERROR: There is duplicated individuals, please check your data")
-    #     }}
   }
   
   # statistical modelling ---------------------------------------------------
   
   #creating all possible object formulas
+  base_terms <- c()
   if(GxE){
     
     # fixed effects
     if(is.null(fixed)){
       fixef <- as.formula(paste0("get(varResp) ~ Env"))
     }
-    if(any(length(fixed)==1&fixed=="Rep")){
+    if("Rep"%in%fixed){
       fixef <- as.formula(paste0("get(varResp) ~ Env + EnvRep"))
     }
     if(length(fixed)>1){
-      fixef <- as.formula(paste0("get(varResp) ~ Env + EnvRep", paste("+",fixed[which(fixed!="Rep")], collapse=" + ")))
+      fixef <- as.formula(paste0("get(varResp) ~ Env + EnvRep", 
+                                 paste("+",fixed[which(fixed!="Rep")], collapse=" + ")))
     }
     
     # random effects
     if(!is.null(random)&"Parc"%in%random){
       random <- c(random[which(random=="Parc")],random[which(random!="Parc")])
     }
-    if(matGen=="family"&!is.null(random)){
-      ranef <- as.formula(paste0("~ EnvFam","+", paste(random, collapse=" + ")))
-    }
-    if(matGen=="clone"&!is.null(random)){
-      ranef <- as.formula(paste0("~ clone + EnvClone", "+", paste(random, collapse=" + ")))
-    }
-    if(matGen=="clone"&is.null(random)){
-      ranef <- as.formula("~ clone + EnvClone")
-    }
-    if(matGen=="family"&is.null(random)){
-      ranef <- as.formula("~ EnvFam")
-    } 
-  }else{
     
+    # Adicionar EnvRep se "Rep" estiver em random
+    if(!is.null(random) & "Rep" %in% random) {
+      base_terms <- c(base_terms, "EnvRep")
+    }
+    # Adicionar termos específicos de matGen
+    if(matGen == "family") {
+      base_terms <- c(base_terms, "EnvFam")
+    }else if(matGen == "clone") {
+      base_terms <- c(base_terms, "clone", "EnvClone")
+    }
+    # Adicionar os termos de random, se existirem
+    if (!is.null(random)) {
+      base_terms <- c(base_terms, random)
+      if("Rep"%in%base_terms){
+        base_terms <- base_terms[-which(base_terms=="Rep")]
+      }
+    }
+    
+    # Criar a fórmula final
+    ranef <- as.formula(paste("~", paste(unique(base_terms), collapse = " + ")))
+  }else{
     #fixed effects
     if(!is.null(fixed)){
       fixef <- as.formula(paste0("get(varResp) ~ 1 +", paste(fixed, collapse=" + ")))
     }else{
       fixef <- as.formula(paste0("get(varResp) ~ 1"))
     }
-    
     # random effects
     if(!is.null(random)&"Parc"%in%random){
       random <- c(random[which(random=="Parc")],random[which(random!="Parc")])
@@ -467,12 +498,14 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
                                          genetic = list(model = "add_animal",
                                                         pedigree = ped,id = "idNum"),
                                          data = data,method = method,
-                                         progsf90.options = 'EM-REML 10'), error = function(e) {convergence <<- TRUE})
+                                         progsf90.options = 'EM-REML 10'), 
+                 error = function(e) {convergence <<- TRUE})
       }else{
         tryCatch(mClone <- breedR::remlf90(fixef,
                                            random = ranef,
                                            data = data,method = method,
-                                           progsf90.options = 'EM-REML 10'), error = function(e) {convergence <<- TRUE})
+                                           progsf90.options = 'EM-REML 10'), 
+                 error = function(e) {convergence <<- TRUE})
       })
     
     #significance of effects
@@ -481,12 +514,13 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
     if(GxE){
       if(is.null(random)){
         lmerModel <- as.formula(paste0(format(fixef)," + ", 
-                                       paste0("(1|", matGen, ")"," + ","(1|", paste0("Env",treatment), ")"))) 
+                                       paste0("(1|", matGen, ")"," + ","(1|", 
+                                              paste0("Env",treatment), ")"))) 
         
       }else{
         lmerModel <- as.formula(paste0(paste0("get(varResp) ~ Env + EnvRep")," + ", 
-                                       paste0("(1|", matGen, ")","+","(1|", paste0("Env",treatment), ") + ")
-                                       , paste("(1|", random, collapse=") + "),")"))
+                                       paste0("(1|", matGen, ")","+","(1|", paste0("Env",treatment), ") + "),
+                                       paste("(1|", random, collapse=") + "),")"))
       }
     }else{
       if(is.null(random)){
@@ -519,46 +553,55 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
     
     r2Fam <- mAdd$ranef$genetic[[1]] %>% 
       mutate(r2=1-(s.e.)^2/(diag(diag(length(mAdd$ranef$genetic[[1]][,1])))*as.data.frame(mAdd$var)["genetic",1])) %>% 
-      filter(row_number() %in% nFamily$nFamily) %>% add_column(family = nFamily$family, .before = "value") %>% mutate(value=value) %>% mutate(s.e.=s.e.) %>% 
+      filter(row_number() %in% nFamily$nFamily) %>% 
+      add_column(family = nFamily$family, .before = "value") %>% 
+      mutate(value=value) %>% mutate(s.e.=s.e.) %>% 
       rename(a = value)
     
     r2Ind <- mAdd$ranef$genetic[[1]] %>% 
       mutate(r2=1-s.e.^2/(diag(diag(length(mAdd$ranef$genetic[[1]][,1])))*as.data.frame(mAdd$var)["genetic",1])) %>% 
-      filter(row_number() > max(nFamily$nFamily)) %>% add_column(Ind = data$Ind, .before = "value") %>% filter(!is.na(resp)) %>% rename(a = value)
+      filter(row_number() > max(nFamily$nFamily)) %>% 
+      add_column(Ind = data$Ind, .before = "value") %>% filter(!is.na(resp)) %>% rename(a = value)
     
     if("GD"%in%names(data)){
       r2GD <- mAdd$ranef$genetic[[1]] %>% 
         mutate(r2=1-(s.e.)^2/(diag(diag(length(mAdd$ranef$genetic[[1]][,1])))*as.data.frame(mAdd$var)["genetic",1])) %>% 
-        filter(row_number() %in% nGD$nGD) %>% add_column(GD = nGD$GD, .before = "value") %>% mutate(value=value) %>% mutate(s.e.=s.e.) %>% 
+        filter(row_number() %in% nGD$nGD) %>% 
+        add_column(GD = nGD$GD, .before = "value") %>% mutate(value=value) %>% mutate(s.e.=s.e.) %>% 
         rename(a = value)
     }
     if("sire"%in%names(data)){
       r2Sire <- mAdd$ranef$genetic[[1]] %>% 
         mutate(r2=1-(s.e.)^2/(diag(diag(length(mAdd$ranef$genetic[[1]][,1])))*as.data.frame(mAdd$var)["genetic",1])) %>% 
-        filter(row_number() %in% nSire$nSire) %>% add_column(Sire = nSire$sire, .before = "value") %>% mutate(value=value) %>% mutate(s.e.=s.e.) %>% 
+        filter(row_number() %in% nSire$nSire) %>% 
+        add_column(Sire = nSire$sire, .before = "value") %>% mutate(value=value) %>% mutate(s.e.=s.e.) %>% 
         rename(a = value)
       
       if(GxE){
         r2Ind_df <- r2Ind %>% 
-          {if (plotType=="LP") separate(.,Ind,c("Seq","Env","Block","Sire","Family","Plot","Tree"),  sep="-x-") else 
-            separate(.,Ind,c("Seq","Env","Block","Sire","Family","Tree"), sep="-x-")}
+          {if (plotType=="LP") separate(.,Ind,c("Seq","Env","Block","Sire","Family","Plot","Tree"),  
+                                        sep="-x-") else separate(.,Ind,c("Seq","Env","Block","Sire","Family","Tree"), 
+                                                                 sep="-x-")}
       }else{
         r2Ind_df <- r2Ind %>% 
-          {if (plotType=="LP") separate(.,Ind,c("Seq","Block","Sire","Family","Plot","Tree"),  sep="-x-") else 
-            separate(.,Ind,c("Seq","Block","Sire","Family","Tree"), sep="-x-")}
+          {if (plotType=="LP") separate(.,Ind,c("Seq","Block","Sire","Family","Plot","Tree"),  
+                                        sep="-x-") else separate(.,Ind,c("Seq","Block","Sire","Family","Tree"), 
+                                                                 sep="-x-")}
       }
       
     }else{
       
       if(GxE){
         r2Ind_df <- r2Ind %>% 
-          {if (plotType=="LP") separate(.,Ind,c("Seq","Env","Block","Family","Plot","Tree"),  sep="-x-") else 
-            separate(.,Ind,c("Seq","Env","Block","Family","Tree"), sep="-x-")}
+          {if (plotType=="LP") separate(.,Ind,c("Seq","Env","Block","Family","Plot","Tree"),  
+                                        sep="-x-") else separate(.,Ind,c("Seq","Env","Block","Family","Tree"), 
+                                                                 sep="-x-")}
         
       }else{
         r2Ind_df <- r2Ind %>% 
-          {if (plotType=="LP") separate(.,Ind,c("Seq","Block","Family","Plot","Tree"),  sep="-x-") else 
-            separate(.,Ind,c("Seq","Block","Family","Tree"), sep="-x-")}
+          {if (plotType=="LP") separate(.,Ind,c("Seq","Block","Family","Plot","Tree"),  
+                                        sep="-x-") else separate(.,Ind,c("Seq","Block","Family","Tree"), 
+                                                                 sep="-x-")}
       }}  
     
     
@@ -578,8 +621,11 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
       vGxE <- mAdd$var["EnvFam",1]
       nEnv <- length(unique(data$Env))
       rgloc <- (vA/4)/((vA/4)+vGxE)
+      
+      if("Rep"%in%random){
+        random[which(random=="Rep")] <- "EnvRep"
+      }
     }
-    
     # Linear plot
     if(plotType=="LP"){
       nArv <- length(unique(data$Arv))
@@ -592,7 +638,7 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
           vPhen <- vA + vGxE + vParc + vE
           c2GxE <- vGxE/vPhen
           
-          if("Rep"%in%fixed){
+          if("Rep"%in%fixed|"Rep"%in%random){
             h2m <- (0.25*vA) / (0.25*vA+(vGxE/nEnv)+(vParc/nRep*nEnv)+vE/(nRep*nArv))
           }else{
             h2m <- (0.25*vA) / (0.25*vA+(vGxE/nEnv)+(vParc/nEnv)+vE)
@@ -604,7 +650,7 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
         }else{
           vPhen <- vA + vParc + vE
           
-          if("Rep"%in%fixed){
+          if("Rep"%in%fixed|"Rep"%in%random){
             h2m <- (0.25*vA) / (0.25*vA+(vParc/nRep)+vE/(nRep*nArv))
           }else{
             h2m <- "There is no block replication"
@@ -704,21 +750,27 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
           SEvE <- mAdd$var["Residual",2]
           h2aSE <- mAdd$funvars["sample sd",1]
           
-          if(GxE) round(data.frame(Estimates=c(vA,vParc,vRdm1,vRdm2,vGxE,vE,vPhen,h2a,h2d,c2Parc,c2Rdm1,c2Rdm2,c2GxE,rgloc,accFam,accInd,CVgi,CVe,Mean), 
+          if(GxE) round(data.frame(Estimates=c(vA,vParc,vRdm1,vRdm2,vGxE,vE,vPhen,h2a,h2d,c2Parc,
+                                               c2Rdm1,c2Rdm2,c2GxE,rgloc,accFam,accInd,CVgi,CVe,Mean), 
                                    SE=c(SEvA,SEvParc,SEvRdm1,SEvRdm2,SEvE,NA,h2aSE,matrix(NA,nrow=11,ncol=1)), 
                                    row.names = genParNames),genPar_digits) else 
-                                     genPar <- round(data.frame(Estimates=c(vA,vParc,vRdm1,vRdm2,vE,vPhen,h2a,h2d,c2Parc,c2Rdm1,c2Rdm2,accFam,accInd,CVgi,CVe,Mean), 
-                                                                SE=c(SEvA,SEvParc,SEvRdm1,SEvRdm2,SEvE,NA,h2aSE,matrix(NA,nrow=9,ncol=1)), 
+                                     genPar <- round(data.frame(
+                                       Estimates=c(vA,vParc,vRdm1,vRdm2,vE,vPhen,h2a,h2d,c2Parc,
+                                                   c2Rdm1,c2Rdm2,accFam,accInd,CVgi,CVe,Mean), 
+                                                                SE=c(SEvA,SEvParc,SEvRdm1,SEvRdm2,
+                                                                     SEvE,NA,h2aSE,matrix(NA,nrow=9,ncol=1)), 
                                                                 row.names = genParNames),genPar_digits)
         }else{
-          if(GxE) round(data.frame(Estimates=c(vA,vParc,vRdm1,vRdm2,vGxE,vE,vPhen,h2a,h2d,c2Parc,c2Rdm1,c2Rdm2,c2GxE,rgloc,accFam,accInd,CVgi,CVe,Mean),
+          if(GxE) round(data.frame(Estimates=c(vA,vParc,vRdm1,vRdm2,vGxE,vE,vPhen,h2a,h2d,c2Parc,
+                                               c2Rdm1,c2Rdm2,c2GxE,rgloc,accFam,accInd,CVgi,CVe,Mean),
                                    row.names = genParNames),genPar_digits) else 
-                                     genPar <- round(data.frame(Estimates=c(vA,vParc,vRdm1,vRdm2,vE,vPhen,h2a,h2d,c2Parc,c2Rdm1,c2Rdm2,accFam,accInd,CVgi,CVe,Mean),
+                                     genPar <- round(data.frame(
+                                       Estimates=c(vA,vParc,vRdm1,vRdm2,vE,vPhen,h2a,h2d,c2Parc,c2Rdm1,
+                                                   c2Rdm2,accFam,accInd,CVgi,CVe,Mean),
                                                                 row.names = genParNames),genPar_digits)
         }
       }
     }
-    
     # Single tree plot
     if(plotType=="STP"){
       CVe = sqrt(0.75*vA+vE)/Mean*100
@@ -727,12 +779,13 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
         if(GxE){
           vPhen <- vA + vGxE + vE
           c2GxE <- vGxE/vPhen
-          if("Rep"%in%fixed){
+          if("Rep"%in%fixed|"Rep"%in%random){
             h2m <- (0.25*vA) / (0.25*vA+(vGxE/nEnv)+vE/(nRep))
           }else{
-            h2m <- (0.25*vA) / (0.25*vA+(vGxE/nEnv)+vE/(nRep))
+            h2m <- (0.25*vA) / (0.25*vA+(vGxE/nEnv)+vE)
           }
-          genParNames <- c("vA","vGxE","vE","vPhen","h2a","h2d","h2m","accFam","accInd","c2GxE","rgloc","CVgi%","CVe%","Mean")
+          genParNames <- c("vA","vGxE","vE","vPhen","h2a","h2d","h2m","accFam","accInd","c2GxE",
+                           "rgloc","CVgi%","CVe%","Mean")
         }else{
           vPhen <- vA + vE
           genParNames <- c("vA","vE","vPhen","h2a","h2d","h2m","accFam","accInd","CVgi%","CVe%","Mean")
@@ -752,21 +805,26 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
           SEvE <- mAdd$var["Residual",2]
           h2aSE <- mAdd$funvars["sample sd",1]
           
-          if(GxE) genPar <- round(data.frame(Estimates=c(vA,vGxE,vE,vPhen,h2a,h2d,h2m,accFam,accInd,c2GxE,rgloc,CVgi,CVe,Mean), 
+          if(GxE) genPar <- round(data.frame(Estimates=c(vA,vGxE,vE,vPhen,h2a,h2d,h2m,
+                                                         accFam,accInd,c2GxE,rgloc,CVgi,CVe,Mean), 
                                              SE=c(SEvA,SEvGxE,SEvE,NA,h2aSE,matrix(NA,nrow=9,ncol=1)), 
                                              row.names = genParNames),genPar_digits) else 
-                                               genPar <- round(data.frame(Estimates=c(vA,vE,vPhen,h2a,h2d,h2m,accFam,accInd,CVgi,CVe,Mean), 
+                                               genPar <- round(data.frame(
+                                                 Estimates=c(vA,vE,vPhen,h2a,h2d,h2m,accFam,accInd,CVgi,CVe,Mean), 
                                                                           SE=c(SEvA,SEvE,NA,h2aSE,matrix(NA,nrow=7,ncol=1)), 
                                                                           row.names = genParNames),genPar_digits)
         }else{
-          if(GxE) genPar <- round(data.frame(Estimates=c(vA,vGxE,vE,vPhen,h2a,h2d,h2m,accFam,accInd,c2GxE,rgloc,CVgi,CVe,Mean),
+          if(GxE) genPar <- round(data.frame(Estimates=c(vA,vGxE,vE,vPhen,h2a,h2d,h2m,accFam,accInd,c2GxE,
+                                                         rgloc,CVgi,CVe,Mean),
                                              row.names = genParNames),genPar_digits) else 
-                                               genPar <- round(data.frame(Estimates=c(vA,vE,vPhen,h2a,h2d,h2m,accFam,accInd,CVgi,CVe,Mean),
+                                               genPar <- round(data.frame(
+                                                 Estimates=c(vA,vE,vPhen,h2a,h2d,h2m,accFam,accInd,CVgi,CVe,Mean),
                                                                           row.names = genParNames),genPar_digits)
         }
       }
       if(length(random)==1){
         vRdm1 <- mAdd$var[random,1]
+        
         if(GxE){
           vPhen <- vA + vGxE + vRdm1 + vE
           c2GxE <- vGxE/vPhen
@@ -788,16 +846,21 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
           SEvE <- mAdd$var["Residual",2]
           h2aSE <- mAdd$funvars["sample sd",1]
           
-          if(GxE) genPar <- round(data.frame(Estimates=c(vA,vRdm1,vGxE,vE,vPhen,h2a,c2Rdm1,c2GxE,rgloc,accFam,accInd,CVgi,CVe,Mean), 
+          if(GxE) genPar <- round(data.frame(Estimates=c(vA,vRdm1,vGxE,vE,vPhen,h2a,c2Rdm1,c2GxE,
+                                                         rgloc,accFam,accInd,CVgi,CVe,Mean), 
                                              SE=c(SEvA,SEvRdm1,SEvGxE,SEvE,NA,h2aSE,matrix(NA,nrow=8,ncol=1)), 
                                              row.names = genParNames),genPar_digits) else 
-                                               genPar <- round(data.frame(Estimates=c(vA,vRdm1,vE,vPhen,h2a,c2Rdm1,accFam,accInd,CVgi,CVe,Mean), 
-                                                                          SE=c(SEvA,SEvRdm1,SEvE,NA,h2aSE,matrix(NA,nrow=6,ncol=1)), 
+                                               genPar <- round(data.frame(
+                                                 Estimates=c(vA,vRdm1,vE,vPhen,h2a,c2Rdm1,accFam,accInd,CVgi,CVe,Mean), 
+                                                                          SE=c(SEvA,SEvRdm1,SEvE,NA,
+                                                                               h2aSE,matrix(NA,nrow=6,ncol=1)), 
                                                                           row.names = genParNames),genPar_digits)
         }else{
-          if(GxE) genPar <- round(data.frame(Estimates=c(vA,vRdm1,vGxE,vE,vPhen,h2a,c2Rdm1,c2GxE,rgloc,accFam,accInd,CVgi,CVe,Mean),
+          if(GxE) genPar <- round(data.frame(Estimates=c(vA,vRdm1,vGxE,vE,vPhen,h2a,c2Rdm1,c2GxE,
+                                                         rgloc,accFam,accInd,CVgi,CVe,Mean),
                                              row.names = genParNames),genPar_digits) else 
-                                               genPar <- round(data.frame(Estimates=c(vA,vRdm1,vE,vPhen,h2a,c2Rdm1,accFam,accInd,CVgi,CVe,Mean),
+                                               genPar <- round(data.frame(
+                                                 Estimates=c(vA,vRdm1,vE,vPhen,h2a,c2Rdm1,accFam,accInd,CVgi,CVe,Mean),
                                                                           row.names = genParNames),genPar_digits)
         }
       }
@@ -808,7 +871,8 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
           vPhen <- vA + vRdm1 + vRdm2 + vGxE + vE
           c2GxE <- vGxE/vPhen
           genParNames <- c("vA",paste0("v",random[1]),paste0("v",random[2]),"vGxE","vE","vPhen","h2a",
-                           paste0("c2",random[1]),paste0("c2",random[2]),"c2GxE","rgloc","accFam","accInd","CVgi%","CVe%","Mean")
+                           paste0("c2",random[1]),paste0("c2",random[2]),"c2GxE","rgloc","accFam",
+                           "accInd","CVgi%","CVe%","Mean")
         }else{
           vPhen <- vA + vRdm1 + vRdm2 + vE
           genParNames <- c("vA",paste0("v",random[1]),paste0("v",random[2]),"vE","vPhen","h2a",
@@ -828,17 +892,22 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
           SEvE <- mAdd$var["Residual",2]
           h2aSE <- mAdd$funvars["sample sd",1]
           
-          if(GxE) genPar <- round(data.frame(Estimates=c(vA,vRdm1,vRdm2,vGxE,vE,vPhen,h2a,c2Rdm1,c2Rdm2,c2GxE,rgloc,accFam,accInd,CVgi,CVe,Mean), 
+          if(GxE) genPar <- round(data.frame(Estimates=c(vA,vRdm1,vRdm2,vGxE,vE,vPhen,h2a,c2Rdm1,c2Rdm2,c2GxE,rgloc,
+                                                         accFam,accInd,CVgi,CVe,Mean), 
                                              SE=c(SEvA,SEvRdm1,SEvRdm2,SEvGxE,SEvE,NA,h2aSE,matrix(NA,nrow=9,ncol=1)),
                                              row.names = genParNames),genPar_digits) else 
-                                               genPar <- round(data.frame(Estimates=c(vA,vRdm1,vE,vPhen,h2a,c2Rdm1,c2Rdm1,accFam,accInd,CVgi,CVe,Mean), 
+                                               genPar <- round(data.frame(
+                                                 Estimates=c(vA,vRdm1,vE,vPhen,h2a,c2Rdm1,c2Rdm1,accFam,accInd,CVgi,CVe,Mean), 
                                                                           SE=c(SEvA,SEvRdm1,SEvE,NA,h2aSE,matrix(NA,nrow=7,ncol=1)), 
                                                                           row.names = genParNames),genPar_digits)
           
         }else{
-          if(GxE) genPar <- round(data.frame(Estimates=c(vA,vRdm1,vRdm2,vGxE,vE,vPhen,h2a,c2Rdm1,c2Rdm2,c2GxE,rgloc,accFam,accInd,CVgi,CVe,Mean),
+          if(GxE) genPar <- round(data.frame(Estimates=c(vA,vRdm1,vRdm2,vGxE,vE,vPhen,h2a,c2Rdm1,c2Rdm2,c2GxE,rgloc,
+                                                         accFam,accInd,CVgi,CVe,Mean),
                                              row.names = genParNames),genPar_digits) else 
-                                               genPar <- round(data.frame(Estimates=c(vA,vRdm1,vE,vPhen,h2aSE$Estimate,c2Rdm1,c2Rdm1,accFam,accInd,CVgi,CVe,Mean),
+                                               genPar <- round(data.frame(
+                                                 Estimates=c(vA,vRdm1,vE,vPhen,h2aSE$Estimate,c2Rdm1,c2Rdm1,accFam,
+                                                             accInd,CVgi,CVe,Mean),
                                                                           row.names = genParNames),genPar_digits)
         }
         }
@@ -856,26 +925,34 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
       
       if(GxE){
         indBLUP <- data %>% left_join(.,r2Ind[,1:2],by="Ind") %>% 
-          {if (any(random=="Proc")||any(fixed=="Proc")) dplyr::select(.,Proc,Ind,resp,a,Cod) else dplyr::select(.,Ind,resp,a,Cod)} %>% rename(f=resp) %>% 
-          {if (plotType=="LP") separate(.,Ind,c("Seq","Env","Block","Sire","Family","Plot","Tree"),  sep="-x-") else separate(.,Ind,c("Seq","Env","Block","Sire","Family","Tree"), sep="-x-")} %>% 
+          {if (any(random=="Proc")||any(fixed=="Proc")) dplyr::select(.,Proc,Ind,resp,a,Cod) else 
+            dplyr::select(.,Ind,resp,a,Cod)} %>% rename(f=resp) %>% 
+          {if (plotType=="LP") separate(.,Ind,c("Seq","Env","Block","Sire","Family","Plot","Tree"),  sep="-x-") else 
+            separate(.,Ind,c("Seq","Env","Block","Sire","Family","Tree"), sep="-x-")} %>% 
           mutate("u+a" = Mean+a) %>% drop_na() %>% arrange(desc(a)) %>% dplyr::select(-Seq)
       }else{
         indBLUP <- data %>% left_join(.,r2Ind[,1:2],by="Ind") %>% 
-          {if (any(random=="Proc")||any(fixed=="Proc")) dplyr::select(.,Proc,Ind,resp,a,Cod) else dplyr::select(.,Ind,resp,a,Cod)} %>% rename(f=resp) %>% 
-          {if (plotType=="LP") separate(.,Ind,c("Seq","Block","Sire","Family","Plot","Tree"),  sep="-x-") else separate(.,Ind,c("Seq","Block","Sire","Family","Tree"), sep="-x-")} %>% 
+          {if (any(random=="Proc")||any(fixed=="Proc")) dplyr::select(.,Proc,Ind,resp,a,Cod) else 
+            dplyr::select(.,Ind,resp,a,Cod)} %>% rename(f=resp) %>% 
+          {if (plotType=="LP") separate(.,Ind,c("Seq","Block","Sire","Family","Plot","Tree"),  sep="-x-") else 
+            separate(.,Ind,c("Seq","Block","Sire","Family","Tree"), sep="-x-")} %>% 
           mutate("u+a" = Mean+a) %>% drop_na() %>% arrange(desc(a)) %>% dplyr::select(-Seq)
       }
     }else{
       
       if(GxE){
         indBLUP <- data %>% left_join(.,r2Ind[,1:2],by="Ind") %>% 
-          {if (any(random=="Proc")||any(fixed=="Proc")) dplyr::select(.,Proc,Ind,resp,a,Cod) else dplyr::select(.,Ind,resp,a,Cod)} %>% rename(f=resp) %>% 
-          {if (plotType=="LP") separate(.,Ind,c("Seq","Env","Block","Family","Plot","Tree"),  sep="-x-") else separate(.,Ind,c("Seq","Env","Block","Family","Tree"), sep="-x-")} %>% 
+          {if (any(random=="Proc")||any(fixed=="Proc")) dplyr::select(.,Proc,Ind,resp,a,Cod) else 
+            dplyr::select(.,Ind,resp,a,Cod)} %>% rename(f=resp) %>% 
+          {if (plotType=="LP") separate(.,Ind,c("Seq","Env","Block","Family","Plot","Tree"),  sep="-x-") else 
+            separate(.,Ind,c("Seq","Env","Block","Family","Tree"), sep="-x-")} %>% 
           mutate("u+a" = Mean+a) %>% drop_na() %>% arrange(desc(a)) %>% dplyr::select(-Seq)
       }else{
         indBLUP <- data %>% left_join(.,r2Ind[,1:2],by="Ind") %>% 
-          {if (any(random=="Proc")||any(fixed=="Proc")) dplyr::select(.,Proc,Ind,resp,a,Cod) else dplyr::select(.,Ind,resp,a,Cod)} %>% rename(f=resp) %>% 
-          {if (plotType=="LP") separate(.,Ind,c("Seq","Block","Family","Plot","Tree"),  sep="-x-") else separate(.,Ind,c("Seq","Block","Family","Tree"), sep="-x-")} %>% 
+          {if (any(random=="Proc")||any(fixed=="Proc")) dplyr::select(.,Proc,Ind,resp,a,Cod) else 
+            dplyr::select(.,Ind,resp,a,Cod)} %>% rename(f=resp) %>% 
+          {if (plotType=="LP") separate(.,Ind,c("Seq","Block","Family","Plot","Tree"),  sep="-x-") else 
+            separate(.,Ind,c("Seq","Block","Family","Tree"), sep="-x-")} %>% 
           mutate("u+a" = Mean+a) %>% drop_na() %>% arrange(desc(a)) %>% dplyr::select(-Seq)
       }
     }
@@ -883,13 +960,17 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
     # Provenance BLUP
     if(any(random=="Proc")){
       procBLUP <- mAdd$ranef$Proc[[1]] %>% rownames_to_column(.,"Proc") %>% rename(BLUP=value) %>% arrange(desc(BLUP))
-      indBLUP <- indBLUP %>% left_join(.,procBLUP[,1:2],by="Proc") %>% mutate(a=a+BLUP) %>% mutate("u+a"=Mean+a) %>% dplyr::select(.,-last_col()) %>% 
+      indBLUP <- indBLUP %>% left_join(.,procBLUP[,1:2],by="Proc") %>% mutate(a=a+BLUP) %>% 
+        mutate("u+a"=Mean+a) %>% dplyr::select(.,-last_col()) %>% 
         arrange(desc(a))
-      progBLUP <- progBLUP %>% left_join(.,data[,c("family","Proc")], by= c("Family"="family")) %>% unique() %>% left_join(.,procBLUP[,1:2], by="Proc") %>% 
+      progBLUP <- progBLUP %>% left_join(.,data[,c("family","Proc")], by= c("Family"="family")) %>% 
+        unique() %>% left_join(.,procBLUP[,1:2], by="Proc") %>% 
         mutate(a=a+BLUP) %>% dplyr::select(-c(Proc,BLUP)) %>% arrange(desc(a))
       if(PxE){
-        procgeBLUP <- mAdd$ranef$EnvProc %>% as.data.frame() %>% rownames_to_column() %>% separate(.,rowname,c("Env","Proc"),sep = "_x_") %>% 
-          left_join(.,procBLUP[,1:2],by="Proc") %>% mutate("p+pe"=value+BLUP) %>% dplyr::select(-c(s.e.,BLUP,value)) %>% arrange(desc(.[,3])) %>% 
+        procgeBLUP <- mAdd$ranef$EnvProc %>% as.data.frame() %>% rownames_to_column() %>% 
+          separate(.,rowname,c("Env","Proc"),sep = "_x_") %>% 
+          left_join(.,procBLUP[,1:2],by="Proc") %>% mutate("p+pe"=value+BLUP) %>% 
+          dplyr::select(-c(s.e.,BLUP,value)) %>% arrange(desc(.[,3])) %>% 
           split(.,f=~Env)
       }
     }
@@ -897,27 +978,35 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
     if(GxE){
       
       # Family BLUP (g) plus ge
-      if(GxE) geBLUP <- mAdd$ranef$EnvFam %>% as.data.frame() %>% rownames_to_column() %>% separate(.,rowname,c("Env","Family"),sep = "_x_") %>% 
-          left_join(.,progBLUP,by="Family") %>% left_join(.,envMeans[,1:2], by="Env") %>% mutate(a=a/2, Mean=as.numeric(Mean),"g+ge"=a+value,"g+ge+u"=a+value+Mean) %>% 
+      if(GxE) geBLUP <- mAdd$ranef$EnvFam %>% as.data.frame() %>% rownames_to_column() %>% 
+          separate(.,rowname,c("Env","Family"),sep = "_x_") %>% 
+          left_join(.,progBLUP,by="Family") %>% left_join(.,envMeans[,1:2], by="Env") %>% 
+          mutate(a=a/2, Mean=as.numeric(Mean),"g+ge"=a+value,"g+ge+u"=a+value+Mean) %>% 
           dplyr::select(-c(s.e.,a,value,Mean)) %>% arrange(desc(.[,3])) %>% split(.,f=~Env)
       
       # BLUP indexes ------------------------------------------------------------
       
       # MHVG
       n <- table(plyr::ldply(geBLUP, data.frame)[,-1]$Family) %>% as.data.frame
-      dataMHVG <- plyr::ldply(geBLUP, data.frame)[,-1] %>% group_by(Family) %>% summarise(MHVG=sum(1/g.ge.u)) %>% left_join(.,n,by=c("Family"="Var1")) %>% 
+      dataMHVG <- plyr::ldply(geBLUP, data.frame)[,-1] %>% group_by(Family) %>% 
+        summarise(MHVG=sum(1/g.ge.u)) %>% left_join(.,n,by=c("Family"="Var1")) %>% 
         mutate(MHVG=Freq/MHVG) %>% dplyr::select(-Freq)
       
       # PRVG
-      dataPRVG <- plyr::ldply(geBLUP, data.frame)[,-1] %>% left_join(.,envMeans[,c(1:2)],by="Env") %>% mutate(Mean=as.numeric(Mean),prvgIndex=.[,4]/Mean) %>% 
-        dplyr::select(-5) %>% group_by(Family) %>% summarise(PRVG=mean(prvgIndex)) %>% mutate(PRVG=PRVG*Mean)
+      dataPRVG <- plyr::ldply(geBLUP, data.frame)[,-1] %>% left_join(.,envMeans[,c(1:2)],by="Env") %>% 
+        mutate(Mean=as.numeric(Mean),prvgIndex=.[,4]/Mean) %>% 
+        dplyr::select(-5) %>% group_by(Family) %>% summarise(PRVG=mean(prvgIndex)) %>% 
+        mutate(PRVG=PRVG*Mean)
       
       # MHPRVG
-      dataMHPRVG <- plyr::ldply(geBLUP, data.frame)[,-1] %>% left_join(.,envMeans[,c(1:2)],by="Env") %>% mutate(Mean=as.numeric(Mean),prvgIndex=1/(.[,4]/Mean)) %>% 
-        group_by(Family) %>% summarise(MHPRVG=sum(prvgIndex)) %>% left_join(.,n,by=c("Family"="Var1")) %>% mutate(MHPRVG=Freq/MHPRVG*Mean) %>% 
+      dataMHPRVG <- plyr::ldply(geBLUP, data.frame)[,-1] %>% left_join(.,envMeans[,c(1:2)],by="Env") %>% 
+        mutate(Mean=as.numeric(Mean),prvgIndex=1/(.[,4]/Mean)) %>% 
+        group_by(Family) %>% summarise(MHPRVG=sum(prvgIndex)) %>% left_join(.,n,by=c("Family"="Var1")) %>% 
+        mutate(MHPRVG=Freq/MHPRVG*Mean) %>% 
         dplyr::select(-Freq)
       
-      indexBLUP <- dataMHVG %>% mutate(r_MHVG=order(order(MHVG, decreasing = T))) %>% left_join(.,dataPRVG,by="Family") %>% 
+      indexBLUP <- dataMHVG %>% mutate(r_MHVG=order(order(MHVG, decreasing = T))) %>% 
+        left_join(.,dataPRVG,by="Family") %>% 
         mutate(r_PRVG=order(order(PRVG, decreasing = T))) %>% left_join(.,dataMHPRVG,by="Family") %>% 
         mutate(r_MHPRVG=order(order(MHPRVG, decreasing = T))) %>% arrange(-MHPRVG) %>% as.data.frame()
     }
@@ -941,18 +1030,22 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
     }
     dfNe[is.na(dfNe)] <- 0
     
-    indBLUP <- indBLUP %>% mutate(Np = cumsum(!duplicated(indBLUP$Family))) %>% mutate(seq = seq(1:nrow(indBLUP))) %>% mutate(Kf = seq/Np) %>% 
-      mutate(varkf = dfNe) %>% mutate(Ne = (4*Np*Kf)/(3+Kf+(varkf/Kf))) %>% dplyr::select(.,-c("Np","seq","Kf","varkf")) %>% 
+    indBLUP <- indBLUP %>% mutate(Np = cumsum(!duplicated(indBLUP$Family))) %>% 
+      mutate(seq = seq(1:nrow(indBLUP))) %>% mutate(Kf = seq/Np) %>% 
+      mutate(varkf = dfNe) %>% mutate(Ne = (4*Np*Kf)/(3+Kf+(varkf/Kf))) %>% 
+      dplyr::select(.,-c("Np","seq","Kf","varkf")) %>% 
       relocate(Cod, .after = last_col())
     
     # Overlapping generations
     if(GxE){
       overBLUP <- progBLUP %>% {if (plotType=="LP") mutate(.,Env = 0, Block = 0, Plot = 0, Tree = 0, Cod = "Parent") %>% 
-          relocate(Env,Block,Family,Plot,Tree,a,Cod) else mutate(.,Env = 0, Block = 0, Tree = 0, Cod = "Parent") %>% relocate(Env,Block,Family,Tree,a,Cod)} %>% 
+          relocate(Env,Block,Family,Plot,Tree,a,Cod) else mutate(.,Env = 0, Block = 0, Tree = 0, Cod = "Parent") %>% 
+          relocate(Env,Block,Family,Tree,a,Cod)} %>% 
         rbind(.,indBLUP[,colnames(.)]) %>% arrange(desc(a))
     }else{
       overBLUP <- progBLUP %>% {if (plotType=="LP") mutate(.,Block = 0, Plot = 0, Tree = 0, Cod = "Parent") %>% 
-          relocate(Block,Family,Plot,Tree,a,Cod) else mutate(.,Block = 0, Tree = 0, Cod = "Parent") %>% relocate(Block,Family,Tree,a,Cod)} %>% 
+          relocate(Block,Family,Plot,Tree,a,Cod) else mutate(.,Block = 0, Tree = 0, Cod = "Parent") %>% 
+          relocate(Block,Family,Tree,a,Cod)} %>% 
         rbind(.,indBLUP[,colnames(.)]) %>% arrange(desc(a))
     }
     
@@ -970,7 +1063,8 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
         }
         
         # Filtering using the maximum number of individuals per progeny, then the max number of progenies addmited in the same block
-        rankBLUP <- rankBLUP %>% mutate(Np_csum = ave(Family==Family, Family, FUN=cumsum)) %>% filter(Np_csum <= maxIndProgeny) %>% 
+        rankBLUP <- rankBLUP %>% mutate(Np_csum = ave(Family==Family, Family, FUN=cumsum)) %>% 
+          filter(Np_csum <= maxIndProgeny) %>% 
           mutate(RP = paste0(Block,Family)) %>% mutate(RP_csum = ave(RP==RP,RP, FUN=cumsum)) %>% 
           filter(RP_csum <= maxProgenyBlock) %>% dplyr::select(.,-c("Np_csum","RP","RP_csum"))
         
@@ -984,8 +1078,10 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
         }
         dfNe[is.na(dfNe)] <- 0
         
-        optimizedBLUP <- rankBLUP %>% mutate(Np = cumsum(!duplicated(rankBLUP$Family))) %>% mutate(seq = seq(1:nrow(rankBLUP))) %>% mutate(Kf = seq/Np) %>% 
-          mutate(varkf = dfNe) %>% mutate(Ne = (4*Np*Kf)/(3+Kf+(varkf/Kf))) %>% dplyr::select(.,-c("Np","seq","Kf","varkf")) %>% 
+        optimizedBLUP <- rankBLUP %>% mutate(Np = cumsum(!duplicated(rankBLUP$Family))) %>% 
+          mutate(seq = seq(1:nrow(rankBLUP))) %>% mutate(Kf = seq/Np) %>% 
+          mutate(varkf = dfNe) %>% mutate(Ne = (4*Np*Kf)/(3+Kf+(varkf/Kf))) %>% 
+          dplyr::select(.,-c("Np","seq","Kf","varkf")) %>% 
           relocate(Cod, .after = last_col())
       }}
     
@@ -1003,9 +1099,12 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
     genParBLUP$Model$mSig$randomSig <- suppressMessages(lmerTest::ranova(mSig, reduce.terms = F))
     
     # genetic_parameters_accuracy_and_Blup -------------------------------------------------
-    genParBLUP$genPar <- genPar; genParBLUP$blupAccuracy$progAccuracy <- r2Fam; genParBLUP$blupAccuracy$indAccuracy <- r2Ind_df 
-    genParBLUP$BLUP$progBLUP <- progBLUP; if(GxE) genParBLUP$BLUP$geBLUP <- geBLUP; if(GxE) genParBLUP$BLUP$blupIndex <- indexBLUP; 
-    if("Proc"%in%random) genParBLUP$BLUP$procBLUP <- procBLUP; if(PxE) genParBLUP$BLUP$procgeBLUP <- procgeBLUP;
+    genParBLUP$genPar <- genPar; genParBLUP$blupAccuracy$progAccuracy <- r2Fam; 
+    genParBLUP$blupAccuracy$indAccuracy <- r2Ind_df 
+    genParBLUP$BLUP$progBLUP <- progBLUP; if(GxE) genParBLUP$BLUP$geBLUP <- geBLUP; if(GxE) 
+      genParBLUP$BLUP$blupIndex <- indexBLUP; 
+    if("Proc"%in%random) genParBLUP$BLUP$procBLUP <- procBLUP; if(PxE) 
+      genParBLUP$BLUP$procgeBLUP <- procgeBLUP;
     genParBLUP$BLUP$indBLUP <- indBLUP; genParBLUP$BLUP$overBLUP <- overBLUP
     
     if(optimizeSelection==TRUE){
@@ -1087,13 +1186,15 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
           if(GxE) genPar <- round(data.frame(Estimates=c(vG,vGxE,vParc,vE,vPhen,h2G,h2mc,c2GxE,c2Parc,rgloc,accClone,CVg,CVe,Mean), 
                                              SE=c(SEvG,SEvGxE,SEvParc,SEvE,NA,h2GSE,matrix(NA,nrow=8,ncol=1)), 
                                              row.names = genParNames),genPar_digits) else 
-                                               genPar <- round(data.frame(Estimates=c(vG,vParc,vE,vPhen,h2G,h2mc,c2Parc,accClone,CVg,CVe,Mean), 
+                                               genPar <- round(data.frame(
+                                                 Estimates=c(vG,vParc,vE,vPhen,h2G,h2mc,c2Parc,accClone,CVg,CVe,Mean), 
                                                                           SE=c(SEvG,SEvParc,SEvE,NA,h2GSE,matrix(NA,nrow=6,ncol=1)), 
                                                                           row.names = genParNames),genPar_digits)
         }else{
           if(GxE) genPar <- round(data.frame(Estimates=c(vG,vGxE,vParc,vE,vPhen,h2G,h2mc,c2GxE,c2Parc,rgloc,accClone,CVg,CVe,Mean),
                                              row.names = genParNames),genPar_digits) else 
-                                               genPar <- round(data.frame(Estimates=c(vG,vParc,vE,vPhen,h2G,h2mc,c2Parc,accClone,CVg,CVe,Mean),
+                                               genPar <- round(data.frame(
+                                                 Estimates=c(vG,vParc,vE,vPhen,h2G,h2mc,c2Parc,accClone,CVg,CVe,Mean),
                                                                           row.names = genParNames),genPar_digits)
         }
         
@@ -1133,16 +1234,23 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
           SEvE <- mClone$var["Residual",2]
           
           
-          if(GxE) genPar <- round(data.frame(Estimates=c(vG,vGxE,vParc,vRdm1,vE,vPhen,h2G,c2GxE,c2Parc,c2Rdm1,rgloc,accClone,CVg,CVe,Mean), 
+          if(GxE) genPar <- round(data.frame(Estimates=c(vG,vGxE,vParc,vRdm1,vE,vPhen,h2G,c2GxE,
+                                                         c2Parc,c2Rdm1,rgloc,accClone,CVg,CVe,Mean), 
                                              SE=c(SEvG,SEvGxE,SEvParc,SEvRdm1,SEvE,NA,h2GSE,matrix(NA,nrow=8,ncol=1)), 
                                              row.names = genParNames),genPar_digits) else 
-                                               genPar <- round(data.frame(Estimates=c(vG,vParc,vRdm1,vE,vPhen,h2G,c2Parc,c2Rdm1,accClone,CVg,CVe,Mean), 
-                                                                          SE=c(SEvG,SEvParc,SEvRdm1,SEvE,NA,h2GSE,matrix(NA,nrow=6,ncol=1)), 
+                                               genPar <- round(data.frame(
+                                                 Estimates=c(vG,vParc,vRdm1,vE,vPhen,h2G,c2Parc,
+                                                             c2Rdm1,accClone,CVg,CVe,Mean), 
+                                                                          SE=c(SEvG,SEvParc,SEvRdm1,
+                                                                               SEvE,NA,h2GSE,matrix(NA,nrow=6,ncol=1)), 
                                                                           row.names = genParNames),genPar_digits)
         }else{
-          if(GxE) genPar <- round(data.frame(Estimates=c(vG,vGxE,vParc,vRdm1,vE,vPhen,h2G,c2GxE,c2Parc,c2Rdm1,rgloc,accClone,CVg,CVe,Mean),
+          if(GxE) genPar <- round(data.frame(Estimates=c(vG,vGxE,vParc,vRdm1,vE,vPhen,h2G,c2GxE,
+                                                         c2Parc,c2Rdm1,rgloc,accClone,CVg,CVe,Mean),
                                              row.names = genParNames),genPar_digits) else 
-                                               genPar <- round(data.frame(Estimates=c(vG,vParc,vRdm1,vE,vPhen,h2G,c2Parc,c2Rdm1,accClone,CVg,CVe,Mean),
+                                               genPar <- round(data.frame(
+                                                 Estimates=c(vG,vParc,vRdm1,vE,vPhen,h2G,c2Parc,
+                                                             c2Rdm1,accClone,CVg,CVe,Mean),
                                                                           row.names = genParNames),genPar_digits)
         }
         
@@ -1154,12 +1262,16 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
         if(GxE){
           vPhen <- vG + vGxE + vParc + vRdm1 + vRdm2 + vE
           c2GxE <- vGxE/vPhen
-          genParNames <- c("vG","vGxE","vParc",paste0("v",random[rdmIndex[1]]),paste0("v",random[rdmIndex[2]]),"vE","vPhen","h2G","c2GxE",
-                           "c2Parc",paste0("c2",random[rdmIndex[1]]),paste0("c2",random[rdmIndex[2]]),"rgloc","accClone","CVg%","CVe%","Mean")
+          genParNames <- c("vG","vGxE","vParc",paste0("v",random[rdmIndex[1]]),
+                           paste0("v",random[rdmIndex[2]]),"vE","vPhen","h2G","c2GxE",
+                           "c2Parc",paste0("c2",random[rdmIndex[1]]),
+                           paste0("c2",random[rdmIndex[2]]),"rgloc","accClone","CVg%","CVe%","Mean")
         }else{
           vPhen <- vG + vParc + vRdm1 + vRdm2 + vE
-          genParNames <- c("vG","vParc",paste0("v",random[rdmIndex[1]]),paste0("v",random[rdmIndex[2]]),"vE","vPhen","h2G",
-                           "c2Parc",paste0("c2",random[rdmIndex[1]]),paste0("c2",random[rdmIndex[2]]),"rgloc","accClone","CVg%","CVe%","Mean")
+          genParNames <- c("vG","vParc",paste0("v",random[rdmIndex[1]]),
+                           paste0("v",random[rdmIndex[2]]),"vE","vPhen","h2G",
+                           "c2Parc",paste0("c2",random[rdmIndex[1]]),
+                           paste0("c2",random[rdmIndex[2]]),"rgloc","accClone","CVg%","CVe%","Mean")
         }
         
         c2Parc <- vParc/vPhen
@@ -1184,16 +1296,23 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
           SEvRdm2 <- mClone$var[random[3],2]
           SEvE <- mClone$var["Residual",2]
           
-          if(GxE) genPar <- round(data.frame(Estimates=c(vG,vGxE,vParc,vRdm1,vRdm2,vE,vPhen,h2G,c2GxE,c2Parc,c2Rdm1,c2Rdm2,rgloc,accClone,CVg,CVe,Mean), 
+          if(GxE) genPar <- round(data.frame(Estimates=c(vG,vGxE,vParc,vRdm1,vRdm2,vE,vPhen,h2G,
+                                                         c2GxE,c2Parc,c2Rdm1,c2Rdm2,rgloc,accClone,CVg,CVe,Mean), 
                                              SE=c(SEvG,SEvGxE,SEvParc,SEvRdm1,SEvRdm2,SEvE,NA,h2GSE,matrix(NA,nrow=9,ncol=1)), 
                                              row.names = genParNames),genPar_digits) else 
-                                               genPar <- round(data.frame(Estimates=c(vG,vParc,vRdm1,vRdm2,vE,vPhen,h2G,c2Parc,c2Rdm1,c2Rdm2,accClone,CVg,CVe,Mean), 
-                                                                          SE=c(SEvG,SEvParc,SEvRdm1,SEvE,NA,h2GSE,matrix(NA,nrow=7,ncol=1)), 
+                                               genPar <- round(data.frame(
+                                                 Estimates=c(vG,vParc,vRdm1,vRdm2,vE,vPhen,h2G,c2Parc,
+                                                             c2Rdm1,c2Rdm2,accClone,CVg,CVe,Mean), 
+                                                                          SE=c(SEvG,SEvParc,SEvRdm1,SEvE,
+                                                                               NA,h2GSE,matrix(NA,nrow=7,ncol=1)), 
                                                                           row.names = genParNames),genPar_digits)
         }else{
-          if(GxE) genPar <- round(data.frame(Estimates=c(vG,vGxE,vParc,vRdm1,vRdm2,vE,vPhen,h2G,c2GxE,c2Parc,c2Rdm1,c2Rdm2,rgloc,accClone,CVg,CVe,Mean),
+          if(GxE) genPar <- round(data.frame(Estimates=c(vG,vGxE,vParc,vRdm1,vRdm2,vE,vPhen,h2G,
+                                                         c2GxE,c2Parc,c2Rdm1,c2Rdm2,rgloc,accClone,CVg,CVe,Mean),
                                              row.names = genParNames),genPar_digits) else 
-                                               genPar <- round(data.frame(Estimates=c(vG,vParc,vRdm1,vRdm2,vE,vPhen,h2G,c2Parc,c2Rdm1,c2Rdm2,accClone,CVg,CVe,Mean),
+                                               genPar <- round(data.frame(
+                                                 Estimates=c(vG,vParc,vRdm1,vRdm2,vE,vPhen,h2G,
+                                                             c2Parc,c2Rdm1,c2Rdm2,accClone,CVg,CVe,Mean),
                                                                           row.names = genParNames),genPar_digits)
         }
       }}
@@ -1236,13 +1355,15 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
           if(GxE) genPar <- round(data.frame(Estimates=c(vG,vGxE,vE,vPhen,h2G,h2mc,c2GxE,rgloc,accClone,CVg,CVe,Mean), 
                                              SE=c(SEvG,SEvGxE,SEvE,NA,h2GSE,matrix(NA,nrow=7,ncol=1)), 
                                              row.names = genParNames),genPar_digits) else 
-                                               genPar <- round(data.frame(Estimates=c(vG,vE,vPhen,h2G,h2mc,accClone,CVg,CVe,Mean), 
+                                               genPar <- round(data.frame(
+                                                 Estimates=c(vG,vE,vPhen,h2G,h2mc,accClone,CVg,CVe,Mean), 
                                                                           SE=c(SEvG,SEvE,NA,h2GSE,matrix(NA,nrow=5,ncol=1)), 
                                                                           row.names = genParNames),genPar_digits)
         }else{
           if(GxE) genPar <- round(data.frame(Estimates=c(vG,vGxE,vE,vPhen,h2G,h2mc,c2GxE,rgloc,accClone,CVg,CVe,Mean),
                                              row.names = genParNames),genPar_digits) else 
-                                               genPar <- round(data.frame(Estimates=c(vG,vE,vPhen,h2G,h2mc,accClone,CVg,CVe,Mean),
+                                               genPar <- round(data.frame(
+                                                 Estimates=c(vG,vE,vPhen,h2G,h2mc,accClone,CVg,CVe,Mean),
                                                                           row.names = genParNames),genPar_digits)
         }
         
@@ -1282,13 +1403,15 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
           if(GxE) genPar <- round(data.frame(Estimates=c(vG,vGxE,vRdm1,vE,vPhen,h2G,h2mc,c2GxE,c2Rdm1,rgloc,accClone,CVg,CVe,Mean), 
                                              SE=c(SEvG,SEvGxE,SEvRdm1,SEvE,NA,h2GSE,matrix(NA,nrow=8,ncol=1)), 
                                              row.names = genParNames),genPar_digits) else 
-                                               genPar <- round(data.frame(Estimates=c(vG,vRdm1,vE,vPhen,h2G,h2mc,c2Rdm1,accClone,CVg,CVe,Mean), 
+                                               genPar <- round(data.frame(
+                                                 Estimates=c(vG,vRdm1,vE,vPhen,h2G,h2mc,c2Rdm1,accClone,CVg,CVe,Mean), 
                                                                           SE=c(SEvG,SEvRdm1,SEvE,NA,h2GSE,matrix(NA,nrow=6,ncol=1)), 
                                                                           row.names = genParNames),genPar_digits)
         }else{
           if(GxE) genPar <- round(data.frame(Estimates=c(vG,vGxE,vRdm1,vE,vPhen,h2G,h2mc,c2GxE,c2Rdm1,rgloc,accClone,CVg,CVe,Mean),
                                              row.names = genParNames),genPar_digits) else 
-                                               genPar <- round(data.frame(Estimates=c(vG,vRdm1,vE,vPhen,h2G,h2mc,c2Rdm1,accClone,CVg,CVe,Mean),
+                                               genPar <- round(data.frame(
+                                                 Estimates=c(vG,vRdm1,vE,vPhen,h2G,h2mc,c2Rdm1,accClone,CVg,CVe,Mean),
                                                                           row.names = genParNames),genPar_digits)
         }
         
@@ -1328,16 +1451,21 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
           SEvRdm2 <- mClone$var[random[2],2]
           SEvE <- mClone$var["Residual",2]
           
-          if(GxE) genPar <- round(data.frame(Estimates=c(vG,vGxE,vRdm1,vRdm2,vE,vPhen,h2G,h2mc,c2GxE,c2Rdm1,c2Rdm2,rgloc,accClone,CVg,CVe,Mean), 
+          if(GxE) genPar <- round(data.frame(Estimates=c(vG,vGxE,vRdm1,vRdm2,vE,vPhen,h2G,h2mc,c2GxE,c2Rdm1,c2Rdm2,
+                                                         rgloc,accClone,CVg,CVe,Mean), 
                                              SE=c(SEvG,SEvGxE,SEvRdm1,SEvRdm2,SEvE,NA,h2GSE,matrix(NA,nrow=9,ncol=1)), 
                                              row.names = genParNames),genPar_digits) else 
-                                               genPar <- round(data.frame(Estimates=c(vG,vRdm1,vRdm2,vE,vPhen,h2G,h2mc,c2Rdm1,c2Rdm2,accClone,CVg,CVe,Mean), 
-                                                                          SE=c(SEvG,SEvRdm1,SEvRdm2,SEvE,NA,h2GSE,matrix(NA,nrow=7,ncol=1)), 
+                                               genPar <- round(data.frame(
+                                                 Estimates=c(vG,vRdm1,vRdm2,vE,vPhen,h2G,h2mc,c2Rdm1,c2Rdm2,accClone,CVg,CVe,Mean), 
+                                                                          SE=c(SEvG,SEvRdm1,SEvRdm2,SEvE,NA,h2GSE,
+                                                                               matrix(NA,nrow=7,ncol=1)), 
                                                                           row.names = genParNames),genPar_digits)
         }else{
-          if(GxE) genPar <- round(data.frame(Estimates=c(vG,vGxE,vRdm1,vRdm2,vE,vPhen,h2G,h2mc,c2GxE,c2Rdm1,c2Rdm2,rgloc,accClone,CVg,CVe,Mean),
+          if(GxE) genPar <- round(data.frame(Estimates=c(vG,vGxE,vRdm1,vRdm2,vE,vPhen,h2G,h2mc,c2GxE,c2Rdm1,c2Rdm2,
+                                                         rgloc,accClone,CVg,CVe,Mean),
                                              row.names = genParNames),genPar_digits) else 
-                                               genPar <- round(data.frame(Estimates=c(vG,vRdm1,vRdm2,vE,vPhen,h2G,h2mc,c2Rdm1,c2Rdm2,accClone,CVg,CVe,Mean),
+                                               genPar <- round(data.frame(
+                                                 Estimates=c(vG,vRdm1,vRdm2,vE,vPhen,h2G,h2mc,c2Rdm1,c2Rdm2,accClone,CVg,CVe,Mean),
                                                                           row.names = genParNames),genPar_digits)
         }
       }
@@ -1351,18 +1479,24 @@ the function will automatically build Rep:", matGenCol," cross interactions and 
     
     # Provenance BLUP
     if("Proc"%in%random){
-      procBLUP <- mClone$ranef$Proc %>% as.data.frame() %>% rownames_to_column(.,"Proc") %>% rename(BLUP=value) %>% arrange(desc(BLUP))
-      cloneBLUP <- cloneBLUP %>% left_join(.,data[,c("clone","Proc")], by= "clone") %>% unique() %>% left_join(.,procBLUP[,1:2], by="Proc") %>% 
+      procBLUP <- mClone$ranef$Proc %>% as.data.frame() %>% rownames_to_column(.,"Proc") %>% 
+        rename(BLUP=value) %>% arrange(desc(BLUP))
+      cloneBLUP <- cloneBLUP %>% left_join(.,data[,c("clone","Proc")], by= "clone") %>% 
+        unique() %>% left_join(.,procBLUP[,1:2], by="Proc") %>% 
         mutate(g=g+BLUP) %>% dplyr::select(-c(Proc,BLUP)) %>% arrange(desc(g))
-      if(PxE) procgeBLUP <- mClone$ranef$EnvProc %>% as.data.frame() %>% rownames_to_column() %>% separate(.,rowname,c("Env","Proc"),sep = "_x_") %>% 
-        left_join(.,procBLUP[,1:2],by="Proc") %>% mutate("p+pe"=value+BLUP) %>% dplyr::select(-c(s.e.,BLUP,value)) %>% arrange(desc(.[,3])) %>% 
+      if(PxE) procgeBLUP <- mClone$ranef$EnvProc %>% as.data.frame() %>% rownames_to_column() %>% 
+        separate(.,rowname,c("Env","Proc"),sep = "_x_") %>% 
+        left_join(.,procBLUP[,1:2],by="Proc") %>% mutate("p+pe"=value+BLUP) %>% 
+        dplyr::select(-c(s.e.,BLUP,value)) %>% arrange(desc(.[,3])) %>% 
         split(.,f=~Env)
     }
     
     if(GxE){
       # Clone BLUP (g) plus ge
-      geBLUP <- mClone$ranef$EnvClone[[1]] %>% rownames_to_column() %>% separate(.,rowname,c("Env","clone"),sep = "_x_") %>% 
-        left_join(.,cloneBLUP,by="clone") %>% left_join(.,envMeans[,1:2], by="Env") %>% mutate(Mean=as.numeric(Mean),"g+ge"=g+value,"g+ge+u"=g+value+Mean) %>% 
+      geBLUP <- mClone$ranef$EnvClone[[1]] %>% rownames_to_column() %>% 
+        separate(.,rowname,c("Env","clone"),sep = "_x_") %>% 
+        left_join(.,cloneBLUP,by="clone") %>% left_join(.,envMeans[,1:2], by="Env") %>% 
+        mutate(Mean=as.numeric(Mean),"g+ge"=g+value,"g+ge+u"=g+value+Mean) %>% 
         dplyr::select(-c(s.e.,g,value,Mean)) %>% arrange(desc(.[,3])) %>% split(.,f=~Env)
       
       # BLUP indexes ------------------------------------------------------------
