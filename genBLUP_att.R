@@ -431,17 +431,17 @@ genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL,
       fixef <- as.formula(paste0("get(varResp) ~ Env + EnvRep", 
                                  paste("+",fixed[which(fixed!="Rep")], collapse=" + ")))
     }
-    
     # random effects
     if(!is.null(random)&"Parc"%in%random){
       random <- c(random[which(random=="Parc")],random[which(random!="Parc")])
     }
-    
     # Adicionar EnvRep se "Rep" estiver em random
     if(!is.null(random) & "Rep" %in% random) {
       base_terms <- c(base_terms, "EnvRep")
+      
+      random[which(random=="Rep")] <- "EnvRep"
     }
-    # Adicionar termos específicos de matGen
+    # Adicionar termos espec?ficos de matGen
     if(matGen == "family") {
       base_terms <- c(base_terms, "EnvFam")
     }else if(matGen == "clone") {
@@ -455,7 +455,7 @@ genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL,
       }
     }
     
-    # Criar a fórmula final
+    # Criar a f?rmula final
     ranef <- as.formula(paste("~", paste(unique(base_terms), collapse = " + ")))
   }else{
     #fixed effects
@@ -508,30 +508,13 @@ genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL,
                  error = function(e) {convergence <<- TRUE})
       })
     
-    #significance of effects
-    treatment <- ifelse(matGen=="clone","Clone","Fam")
+    #transform ranef to lme4 formula
+    lmer_ranef <- ranef %>% as.character() %>% {strsplit(.[2], " \\+ ")[[1]]} %>% 
+      paste0("(1|", ., ")") %>% paste(., collapse = " + ")
     
-    if(GxE){
-      if(is.null(random)){
-        lmerModel <- as.formula(paste0(format(fixef)," + ", 
-                                       paste0("(1|", matGen, ")"," + ","(1|", 
-                                              paste0("Env",treatment), ")"))) 
-        
-      }else{
-        lmerModel <- as.formula(paste0(paste0("get(varResp) ~ Env + EnvRep")," + ", 
-                                       paste0("(1|", matGen, ")","+","(1|", paste0("Env",treatment), ") + "),
-                                       paste("(1|", random, collapse=") + "),")"))
-      }
-    }else{
-      if(is.null(random)){
-        lmerModel <- as.formula(paste0("get(varResp) ~ ",paste(fixed, collapse=" + ")," + ", 
-                                       paste0("(1|", matGen, ")"))) 
-        
-      }else{
-        lmerModel <- as.formula(paste0("get(varResp) ~ ",paste(fixed, collapse=" + ")," + ", 
-                                       paste0("(1|", matGen, ") + ", paste("(1|",random, collapse=") + "),")")))
-      }
-    }
+    #lme4 formula
+    lmerModel <- as.formula(paste0(format(fixef)," + ", lmer_ranef))
+    
     suppressMessages(mSig <- lmerTest::lmer(lmerModel, data=data, control = control))
     
     if(!exists("mAdd")&!exists("mClone")){
@@ -621,10 +604,6 @@ genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL,
       vGxE <- mAdd$var["EnvFam",1]
       nEnv <- length(unique(data$Env))
       rgloc <- (vA/4)/((vA/4)+vGxE)
-      
-      if("Rep"%in%random){
-        random[which(random=="Rep")] <- "EnvRep"
-      }
     }
     # Linear plot
     if(plotType=="LP"){
@@ -1125,7 +1104,7 @@ genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL,
     vG <- mClone$var["clone",1]
     vE <- mClone$var["Residual",1]
     Mean <- mean(data$resp,na.rm=T)
-    if("Rep"%in%fixed&GxE){
+    if(GxE){
       nRep <- length(unique(data$EnvRep))
     }else{
       nRep <- length(unique(data$Rep))
