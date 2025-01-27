@@ -1,6 +1,6 @@
 genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL, repCol, matGenCol, matGen, provCol = NULL, 
                     plotType, fixed = "Rep",codCol = NULL, random = NULL, method = "ai", GxE = F, PxE = F, 
-                    excludeControl = NULL, genPar_digits = 6, 
+                    excludeControl = NULL, genPar_digits = 6, plotRanking = NULL,
                     codPerc = NULL, optimizeSelection = FALSE, maxIndProgeny = NULL, 
                     maxProgenyBlock = NULL, excludeCod = NULL, directory = NULL){
   
@@ -534,7 +534,7 @@ genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL,
     
     # reliability_and_individual_blup -----------------------------------------
     
-    r2Fam <- mAdd$ranef$genetic[[1]] %>% 
+    r2Gen <- mAdd$ranef$genetic[[1]] %>% 
       mutate(r2=1-(s.e.)^2/(diag(diag(length(mAdd$ranef$genetic[[1]][,1])))*as.data.frame(mAdd$var)["genetic",1])) %>% 
       filter(row_number() %in% nFamily$nFamily) %>% 
       add_column(family = nFamily$family, .before = "value") %>% 
@@ -589,7 +589,7 @@ genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL,
     
     
     accInd <- mean(sqrt(1-((r2Ind$s.e.)^2)/mAdd$var["genetic",1]), na.rm=T)
-    accFam <- mean(sqrt(1-(((r2Fam$s.e./2))^2)/(mAdd$var["genetic",1]/4)), na.rm=T)
+    accFam <- mean(sqrt(1-(((r2Gen$s.e./2))^2)/(mAdd$var["genetic",1]/4)), na.rm=T)
     
     
     # genetic_parameters ------------------------------------------------------
@@ -896,7 +896,7 @@ genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL,
     # BLUP_dataframes ---------------------------------------------------------
     
     # Family BLUP
-    progBLUP <- r2Fam %>% dplyr::select(family,a) %>% rename(Family=family) %>% arrange(desc(a))
+    progBLUP <- r2Gen %>% dplyr::select(family,a) %>% rename(Family=family) %>% arrange(desc(a))
     
     # Individual_BLUP_genetic_gain_and_effectve_population_size --------------- 
     
@@ -1078,7 +1078,7 @@ genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL,
     genParBLUP$Model$mSig$randomSig <- suppressMessages(lmerTest::ranova(mSig, reduce.terms = F))
     
     # genetic_parameters_accuracy_and_Blup -------------------------------------------------
-    genParBLUP$genPar <- genPar; genParBLUP$blupAccuracy$progAccuracy <- r2Fam; 
+    genParBLUP$genPar <- genPar; genParBLUP$blupAccuracy$progAccuracy <- r2Gen; 
     genParBLUP$blupAccuracy$indAccuracy <- r2Ind_df 
     genParBLUP$BLUP$progBLUP <- progBLUP; if(GxE) genParBLUP$BLUP$geBLUP <- geBLUP; if(GxE) 
       genParBLUP$BLUP$blupIndex <- indexBLUP; 
@@ -1094,11 +1094,11 @@ genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL,
     
     # reliability_and_individual_blup -----------------------------------------
     
-    r2Clone <- mClone$ranef$clone[[1]] %>% 
+    r2Gen <- mClone$ranef$clone[[1]] %>% 
       mutate(r2=1-(s.e./2)^2/(diag(diag(length(mClone$ranef$clone[[1]][,1])))*as.data.frame(mClone$var)["clone",1])) %>% 
       rownames_to_column("clone") %>% dplyr::rename(g = value)
     
-    accClone <- mean(sqrt(1-((r2Clone$s.e.)^2)/(mClone$var["clone",1])), na.rm=T)
+    accClone <- mean(sqrt(1-((r2Gen$s.e.)^2)/(mClone$var["clone",1])), na.rm=T)
     
     # Genetic Parameters
     vG <- mClone$var["clone",1]
@@ -1454,7 +1454,7 @@ genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL,
     # BLUP_dataframes ---------------------------------------------------------
     
     # Clone BLUP
-    cloneBLUP <- r2Clone %>% dplyr::select(clone,g) %>% arrange(desc(g))
+    cloneBLUP <- r2Gen %>% dplyr::select(clone,g) %>% arrange(desc(g))
     
     # Provenance BLUP
     if("Proc"%in%random){
@@ -1516,10 +1516,102 @@ genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL,
     genParBLUP$Model$mSig$randomSig <- suppressMessages(lmerTest::ranova(mSig, reduce.terms = F))
     
     # genetic_parameters_accuracy_and_Blup -------------------------------------------------
-    genParBLUP$genPar <- genPar; genParBLUP$blupAccuracy$cloneAccuracy <- r2Clone; genParBLUP$BLUP$cloneBLUP <- cloneBLUP; 
+    genParBLUP$genPar <- genPar; genParBLUP$blupAccuracy$cloneAccuracy <- r2Gen; genParBLUP$BLUP$cloneBLUP <- cloneBLUP; 
     if(GxE) genParBLUP$BLUP$geBLUP <- geBLUP; if(GxE) genParBLUP$BLUP$blupIndex <- indexBLUP
     if("Proc"%in%random) genParBLUP$BLUP$procBLUP <- procBLUP; if(PxE) genParBLUP$BLUP$procgeBLUP <- procgeBLUP;
     
+  }
+  
+
+  # plot_outputs ------------------------------------------------------------
+
+  if(plotRanking & !is.null(directory)){
+    
+    # BLUP family or clone plot
+    pDf <- r2Gen %>% rename(gen=1, y=2) %>%  arrange(y) %>% 
+      mutate(gen = factor(gen, levels = gen), ci=s.e.*1.76,)
+    
+    pDf$check <- ifelse(pDf$y > 0, "Above", "Below")
+    
+    scale <- 12-log(length(levels(pDf$gen)),2)
+    
+    rank_plot <- ggplot(pDf, aes_string(x = "gen", y = "y", color = "check")) + 
+      coord_flip() + 
+      xlab(matGen) + 
+      ylab(paste0("BLUP - ", varResp)) + theme_minimal() +
+      theme(axis.text.y = element_text(size = scale + 1),
+            axis.title = element_text(size = scale + 5, face = "bold"),
+            legend.position = c(0.95, 0.05),
+            legend.justification = c(1, 0), 
+            legend.title = element_blank(), 
+            legend.background = element_blank() 
+      ) +
+      geom_hline(yintercept = 0, lwd = I(7/12), colour = I(grDevices::hsv(0/12, 7/12, 7/12)), alpha = I(5/12)) +
+      geom_errorbar(aes_string(ymin = "y - ci", ymax = "y + ci", color = "check"), width = 0) +
+      geom_point(size = 3) +
+      scale_color_manual(values = c("Above" = "darkgreen", "Below" = "darkred"))
+    
+    ggsave(filename = paste0(directory, "_rank_plot_", varResp, ".pdf"),
+           plot=rank_plot, width=8, height=10, units="in")
+    
+    # if GxE -----------------------------------------------------------------
+    
+    if(GxE){
+      
+      pDf_ge <- plyr::ldply(geBLUP, data.frame) %>% select(Env, clone, `g.ge`) %>% 
+        rename(gen=2)
+      
+      env_sel <- table(ranked_data$Env) %>% as.data.frame() %>% 
+        filter(Freq == max(Freq)) %>% slice(1) %>% pull(Var1) %>% 
+        as.character()
+      
+      gen_category <- pDf_ge %>% filter(Env==env_sel) %>% 
+        arrange(desc(`g.ge`)) %>%
+        mutate(rank = row_number(),
+               hjust = 1.1,
+               category_env_sel = case_when(
+                 rank <= quantile(rank, 1/3) ~ "Melhores",
+                 rank > quantile(rank, 1/3) & rank <= quantile(rank, 2/3) ~ "Medianos",
+                 rank > quantile(rank, 1/3) ~ "Piores", 
+                 TRUE ~ NA_character_
+               )) %>% dplyr::select(gen, category_env_sel) # edita aqui se for manter assim mesmo
+      
+      ranked_data <- pDf_ge %>%
+        group_by(Env) %>%
+        arrange(desc(`g.ge`)) %>%
+        mutate(rank = row_number(),
+               hjust = case_when(
+                 Env == env_sel ~ 1.1,
+                 TRUE ~ -0.1)) %>%
+        ungroup() %>% left_join(.,gen_category, by = "gen")
+      
+      unique_env <- unique(ranked_data$Env) %>% .[.!=env_sel] %>% 
+        as.character() %>% sort()
+      
+      ranked_data$hjust[which(ranked_data$Env==last(unique_env))] <- -0.1
+      
+      ranked_data$Env <- factor(ranked_data$Env, levels = c(env_sel, unique_env))
+      
+      rank_env_plot <- ggplot(ranked_data, aes(x = Env, y = -rank, group = gen, color = category_env_sel)) +  # -rank para inverter
+        geom_line(size = 1) +      # Linhas conectando os grupos
+        geom_point(size = 3) +     # Pontos em cada grupo
+        geom_text(aes(label = gen, hjust = hjust), size = 4) + # Ajustar rótulos
+        scale_color_manual(
+          values = c("Melhores" = "darkgreen", "Medianos" = "#dab600", "Piores" = "darkred")
+        ) + 
+        theme_minimal() +
+        theme(
+          axis.text.y = element_blank(),
+          axis.title = element_blank(),
+          axis.ticks = element_blank(),
+          panel.grid = element_blank(),
+          legend.position = "none",
+          axis.text.x = element_text(size=12,face="bold")
+        )
+      
+      ggsave(filename = paste0(directory,"_rank_env_plot_", varResp, ".pdf"),
+             plot=rank_env_plot, width=8, height=10, units="in")
+    }
   }
   
   # output ------------------------------------------------------------------
@@ -1685,9 +1777,9 @@ genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL,
     cat("----------------------------------------- Treatment accuracy ---------------------------------\n\n")
     if(matGen=="clone"){
       cat("\n")
-      print(r2Clone)}
+      print(r2Gen)}
     if(matGen=="family"){
-      print(r2Fam)
+      print(r2Gen)
       cat("\n")
       cat("----------------------------------------- Individual accuracy --------------------------------\n\n")
       print(r2Ind_df)
