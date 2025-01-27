@@ -1558,10 +1558,10 @@ genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL,
     
     if(GxE){
       
-      pDf_ge <- plyr::ldply(geBLUP, data.frame) %>% select(Env, clone, `g.ge`) %>% 
-        rename(gen=2)
+      pDf_ge <- plyr::ldply(geBLUP, data.frame) %>% 
+        rename(gen=3) %>% select(Env, gen, `g.ge`)
       
-      env_sel <- table(ranked_data$Env) %>% as.data.frame() %>% 
+      env_sel <- table(pDf_ge$Env) %>% as.data.frame() %>% 
         filter(Freq == max(Freq)) %>% slice(1) %>% pull(Var1) %>% 
         as.character()
       
@@ -1593,7 +1593,7 @@ genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL,
       ranked_data$Env <- factor(ranked_data$Env, levels = c(env_sel, unique_env))
       
       rank_env_plot <- ggplot(ranked_data, aes(x = Env, y = -rank, group = gen, color = category_env_sel)) +  # -rank para inverter
-        geom_line(size = 1) +      # Linhas conectando os grupos
+        geom_line(linewidth = 1) +      # Linhas conectando os grupos
         geom_point(size = 3) +     # Pontos em cada grupo
         geom_text(aes(label = gen, hjust = hjust), size = 4) + # Ajustar rótulos
         scale_color_manual(
