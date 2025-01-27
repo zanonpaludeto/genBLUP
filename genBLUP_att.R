@@ -1535,7 +1535,7 @@ genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL,
     
     scale <- 12-log(length(levels(pDf$gen)),2)
     
-    rank_plot <- ggplot(pDf, aes_string(x = "gen", y = "y", color = "check")) + 
+    rank_plot <- ggplot(pDf, aes_string(x = .data$gen, y = .data$y, color = .data$check)) + 
       coord_flip() + 
       xlab(matGen) + 
       ylab(paste0("BLUP - ", varResp)) + theme_minimal() +
