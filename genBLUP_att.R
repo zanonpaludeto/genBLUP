@@ -1522,98 +1522,6 @@ genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL,
     
   }
   
-
-  # plot_outputs ------------------------------------------------------------
-
-  if(plotRanking & !is.null(directory)){
-    
-    # BLUP family or clone plot
-    pDf <- r2Gen %>% rename(gen=1, y=2) %>%  arrange(y) %>% 
-      mutate(gen = factor(gen, levels = gen), ci=s.e.*1.76,)
-    
-    pDf$check <- ifelse(pDf$y > 0, "Above", "Below")
-    
-    scale <- 12-log(length(levels(pDf$gen)),2)
-    
-    rank_plot <- ggplot(pDf, aes(x = .data$gen, y = .data$y, color = .data$check)) + 
-      coord_flip() + 
-      xlab(matGen) + 
-      ylab(paste0("BLUP - ", varResp)) + theme_minimal() +
-      theme(axis.text.y = element_text(size = scale + 1),
-            axis.title = element_text(size = scale + 5, face = "bold"),
-            legend.position = c(0.95, 0.05),
-            legend.justification = c(1, 0), 
-            legend.title = element_blank(), 
-            legend.background = element_blank() 
-      ) +
-      geom_hline(yintercept = 0, lwd = I(7/12), colour = I(grDevices::hsv(0/12, 7/12, 7/12)), alpha = I(5/12)) +
-      geom_errorbar(aes_string(ymin = "y - ci", ymax = "y + ci", color = "check"), width = 0) +
-      geom_point(size = 3) +
-      scale_color_manual(values = c("Above" = "darkgreen", "Below" = "darkred"))
-    
-    ggsave(filename = paste0(directory, "_rank_plot_", varResp, ".pdf"),
-           plot=rank_plot, width=8, height=10, units="in")
-    
-    # if GxE -----------------------------------------------------------------
-    
-    if(GxE){
-      
-      pDf_ge <- plyr::ldply(geBLUP, data.frame) %>% 
-        rename(gen=3) %>% select(Env, gen, `g.ge`)
-      
-      env_sel <- table(pDf_ge$Env) %>% as.data.frame() %>% 
-        filter(Freq == max(Freq)) %>% slice(1) %>% pull(Var1) %>% 
-        as.character()
-      
-      gen_category <- pDf_ge %>% filter(Env==env_sel) %>% 
-        arrange(desc(`g.ge`)) %>%
-        mutate(rank = row_number(),
-               hjust = 1.1,
-               category_env_sel = case_when(
-                 rank <= quantile(rank, 1/3) ~ "Melhores",
-                 rank > quantile(rank, 1/3) & rank <= quantile(rank, 2/3) ~ "Medianos",
-                 rank > quantile(rank, 1/3) ~ "Piores", 
-                 TRUE ~ NA_character_
-               )) %>% dplyr::select(gen, category_env_sel) # edita aqui se for manter assim mesmo
-      
-      ranked_data <- pDf_ge %>%
-        group_by(Env) %>%
-        arrange(desc(`g.ge`)) %>%
-        mutate(rank = row_number(),
-               hjust = case_when(
-                 Env == env_sel ~ 1.1,
-                 TRUE ~ -0.1)) %>%
-        ungroup() %>% left_join(.,gen_category, by = "gen")
-      
-      unique_env <- unique(ranked_data$Env) %>% .[.!=env_sel] %>% 
-        as.character() %>% sort()
-      
-      ranked_data$hjust[which(ranked_data$Env==last(unique_env))] <- -0.1
-      
-      ranked_data$Env <- factor(ranked_data$Env, levels = c(env_sel, unique_env))
-      
-      rank_env_plot <- ggplot(ranked_data, aes(x = Env, y = -rank, group = gen, color = category_env_sel)) +  # -rank para inverter
-        geom_line(linewidth = 1) +      # Linhas conectando os grupos
-        geom_point(size = 3) +     # Pontos em cada grupo
-        geom_text(aes(label = gen, hjust = hjust), size = 4) + # Ajustar rótulos
-        scale_color_manual(
-          values = c("Melhores" = "darkgreen", "Medianos" = "#dab600", "Piores" = "darkred")
-        ) + 
-        theme_minimal() +
-        theme(
-          axis.text.y = element_blank(),
-          axis.title = element_blank(),
-          axis.ticks = element_blank(),
-          panel.grid = element_blank(),
-          legend.position = "none",
-          axis.text.x = element_text(size=12,face="bold")
-        )
-      
-      ggsave(filename = paste0(directory,"_rank_env_plot_", varResp, ".pdf"),
-             plot=rank_env_plot, width=8, height=10, units="in")
-    }
-  }
-  
   # output ------------------------------------------------------------------
   
   if(!is.null(directory)){
@@ -1629,6 +1537,100 @@ genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL,
       }else{setwd(directory)}
     }
     
+    # plot_outputs ----------------------------------------------------------
+    
+    if(plotRanking & !is.null(directory)){
+      
+      # BLUP family or clone plot
+      pDf <- r2Gen %>% rename(gen=1, y=2) %>%  arrange(y) %>% 
+        mutate(gen = factor(gen, levels = gen), ci=s.e.*1.76,)
+      
+      pDf$check <- ifelse(pDf$y > 0, "Above", "Below")
+      
+      scale <- 12-log(length(levels(pDf$gen)),2)
+      
+      rank_plot <- ggplot(pDf, aes(x = .data$gen, y = .data$y, color = .data$check)) + 
+        coord_flip() + 
+        xlab(matGen) + 
+        ylab(paste0("BLUP - ", varResp)) + theme_minimal() +
+        theme(axis.text.y = element_text(size = scale + 1),
+              axis.title = element_text(size = scale + 5, face = "bold"),
+              legend.position = c(0.95, 0.05),
+              legend.justification = c(1, 0), 
+              legend.title = element_blank(), 
+              legend.background = element_blank() 
+        ) +
+        geom_hline(yintercept = 0, lwd = I(7/12), colour = I(grDevices::hsv(0/12, 7/12, 7/12)), alpha = I(5/12)) +
+        geom_errorbar(aes_string(ymin = "y - ci", ymax = "y + ci", color = "check"), width = 0) +
+        geom_point(size = 3) +
+        scale_color_manual(values = c("Above" = "darkgreen", "Below" = "darkred"))
+      
+      ggsave(filename = paste0(directory, "_rank_plot_", varResp, ".pdf"),
+             plot=rank_plot, width=8, height=10, units="in")
+      
+      # if GxE ---------------------------------------------------------------
+      
+      if(GxE){
+        
+        pDf_ge <- plyr::ldply(geBLUP, data.frame) %>% 
+          rename(gen=3) %>% select(Env, gen, `g.ge`)
+        
+        env_sel <- table(pDf_ge$Env) %>% as.data.frame() %>% 
+          filter(Freq == max(Freq)) %>% slice(1) %>% pull(Var1) %>% 
+          as.character()
+        
+        gen_category <- pDf_ge %>% filter(Env==env_sel) %>% 
+          arrange(desc(`g.ge`)) %>%
+          mutate(rank = row_number(),
+                 hjust = 1.1,
+                 category_env_sel = case_when(
+                   rank <= quantile(rank, 1/3) ~ "Melhores",
+                   rank > quantile(rank, 1/3) & rank <= quantile(rank, 2/3) ~ "Medianos",
+                   rank > quantile(rank, 1/3) ~ "Piores", 
+                   TRUE ~ NA_character_
+                 )) %>% dplyr::select(gen, category_env_sel) # edita aqui se for manter assim mesmo
+        
+        ranked_data <- pDf_ge %>%
+          group_by(Env) %>%
+          arrange(desc(`g.ge`)) %>%
+          mutate(rank = row_number(),
+                 hjust = case_when(
+                   Env == env_sel ~ 1.1,
+                   TRUE ~ -0.1)) %>%
+          ungroup() %>% left_join(.,gen_category, by = "gen")
+        
+        unique_env <- unique(ranked_data$Env) %>% .[.!=env_sel] %>% 
+          as.character() %>% sort()
+        
+        ranked_data$hjust[which(ranked_data$Env==last(unique_env))] <- -0.1
+        
+        ranked_data$Env <- factor(ranked_data$Env, levels = c(env_sel, unique_env))
+        
+        rank_env_plot <- ggplot(ranked_data, aes(x = Env, y = -rank, group = gen, color = category_env_sel)) +  # -rank para inverter
+          geom_line(linewidth = 1) +      # Linhas conectando os grupos
+          geom_point(size = 3) +     # Pontos em cada grupo
+          geom_text(aes(label = gen, hjust = hjust), size = 4) + # Ajustar rótulos
+          scale_color_manual(
+            values = c("Melhores" = "darkgreen", "Medianos" = "#dab600", "Piores" = "darkred")
+          ) + 
+          theme_minimal() +
+          theme(
+            axis.text.y = element_blank(),
+            axis.title = element_blank(),
+            axis.ticks = element_blank(),
+            panel.grid = element_blank(),
+            legend.position = "none",
+            axis.text.x = element_text(size=12,face="bold")
+          )
+        
+        ggsave(filename = paste0(directory,"_rank_env_plot_", varResp, ".pdf"),
+               plot=rank_env_plot, width=8, height=10, units="in")
+      }
+    }
+    
+    
+    # txt output ------------------------------------------------------------
+
     genParFile <- paste0(directory,"_",varResp,"_genPar",".txt")
     
     if (file.exists(genParFile)){
