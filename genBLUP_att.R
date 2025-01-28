@@ -1560,8 +1560,10 @@ genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL,
               legend.title = element_blank(), 
               legend.background = element_blank() 
         ) +
-        geom_hline(yintercept = 0, lwd = I(7/12), colour = I(grDevices::hsv(0/12, 7/12, 7/12)), alpha = I(5/12)) +
-        geom_errorbar(aes_string(ymin = "y - ci", ymax = "y + ci", color = "check"), width = 0) +
+        geom_hline(yintercept = 0, lwd = I(7/12), colour = I(grDevices::hsv(0/12, 7/12, 7/12)), 
+                   alpha = I(5/12)) +
+        geom_errorbar(aes(ymin = !!sym("y") - !!sym("ci"), ymax = !!sym("y") + !!sym("ci"), 
+                          color = !!sym("check")), width = 0) +
         geom_point(size = 3) +
         scale_color_manual(values = c("Above" = "darkgreen", "Below" = "darkred"))
       
