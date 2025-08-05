@@ -269,7 +269,11 @@ genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL,
   data[fct] <- lapply(data[fct], factor)
   
   # adding continuous_fixed to fixed if is not null
-  if(!is.null(continuous_fixed)) fixed <- c(fixed, continuous_fixed)
+  if(!is.null(continuous_fixed)){
+     data <- data %>%
+     mutate(across(all_of(continuous_fixed), ~replace_na(.x, 0)))
+  } 
+  fixed <- c(fixed, continuous_fixed)
   
   # # treeCheck
   # if(plotType=="STP"){
