@@ -1,5 +1,7 @@
-genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL, repCol, matGenCol, matGen, provCol = NULL, 
-                    plotType, fixed = "Rep",codCol = NULL, random = NULL, method = "ai", GxE = F, PxE = F, 
+genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL, 
+                    repCol, matGenCol, matGen, provCol = NULL, 
+                    plotType, fixed = NULL, continuous_fixed = NULL, codCol = NULL, 
+                    random = NULL, method = "ai", GxE = F, PxE = F, 
                     excludeControl = NULL, genPar_digits = 6, plotRanking = NULL,
                     codPerc = NULL, optimizeSelection = FALSE, maxIndProgeny = NULL, 
                     maxProgenyBlock = NULL, excludeCod = NULL, directory = NULL){
@@ -265,6 +267,9 @@ genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL,
   if(GxE) fct <- c("Env",matGen,fixed,random) else fct <- c(matGen,fixed,random)
   
   data[fct] <- lapply(data[fct], factor)
+  
+  # adding continuous_fixed to fixed if is not null
+  if(!is.null(continuous_fixed)) fixed <- c(fixed, continuous_fixed)
   
   # # treeCheck
   # if(plotType=="STP"){
@@ -1611,7 +1616,7 @@ genBLUP <- function(data, varResp,envCol = NULL, treeCol = NULL, plotCol = NULL,
         rank_env_plot <- ggplot(ranked_data, aes(x = Env, y = -rank, group = gen, color = category_env_sel)) +  # -rank para inverter
           geom_line(linewidth = 1) +      # Linhas conectando os grupos
           geom_point(size = 3) +     # Pontos em cada grupo
-          geom_text(aes(label = gen, hjust = hjust), size = 4) + # Ajustar rótulos
+          geom_text(aes(label = gen, hjust = hjust), size = 4) + # Ajustar r?tulos
           scale_color_manual(
             values = c("Melhores" = "darkgreen", "Medianos" = "#dab600", "Piores" = "darkred")
           ) + 
